@@ -1,0 +1,54 @@
+(() => {
+  const subscriptionButton = document.querySelector(".subscription-button");
+  if (!subscriptionButton) return;
+
+  const buttonOffset =
+    subscriptionButton.getBoundingClientRect().top + window.scrollY;
+  let isFixed = false;
+
+  subscriptionButton.style.transition = "opacity 0.3s ease-in-out";
+
+  const onScroll = () => {
+    const shouldBeFixed = window.scrollY > buttonOffset;
+
+    if (shouldBeFixed && !isFixed) {
+      subscriptionButton.style.opacity = "0";
+
+      setTimeout(() => {
+        Object.assign(subscriptionButton.style, {
+          position: "fixed",
+          bottom: "20px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "90%",
+          maxWidth: "1200px",
+          zIndex: "999",
+          margin: "0",
+          borderRadius: "9999px",
+          opacity: "1",
+        });
+        isFixed = true;
+      }, 300);
+    } else if (!shouldBeFixed && isFixed) {
+      subscriptionButton.style.opacity = "0";
+
+      setTimeout(() => {
+        Object.assign(subscriptionButton.style, {
+          position: "",
+          bottom: "",
+          left: "",
+          transform: "",
+          width: "",
+          maxWidth: "",
+          zIndex: "",
+          margin: "",
+          borderRadius: "",
+          opacity: "1",
+        });
+        isFixed = false;
+      }, 300);
+    }
+  };
+
+  window.addEventListener("scroll", onScroll);
+})();

@@ -1,0 +1,2366 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta http-equiv="content-type" content="text/html;charset=UTF-8">
+  <title>Mel Maia</title>
+  <!-- Config dinâmica (painel /admin.html): sobrescreve nome/usuário/mídias.
+       Sem nada salvo no KV, a página usa os arquivos estáticos normalmente. -->
+  <script>
+  (function () {
+    function apply(cfg) {
+      if (!cfg) return;
+      // atualiza só o texto inicial de um elemento, preservando filhos (ex.: selo verificado)
+      function setLead(el, t) {
+        if (!el) return;
+        var n = el.firstChild;
+        if (n && n.nodeType === 3) n.nodeValue = t + ' ';
+        else el.insertBefore(document.createTextNode(t + ' '), el.firstChild);
+      }
+      function run() {
+        if (cfg.name) {
+          document.title = cfg.name;
+          setLead(document.querySelector('.profile-name'), cfg.name);
+          setLead(document.querySelector('.popup-profile-name'), cfg.name);
+          document.querySelectorAll('.feed-name').forEach(function (e) { e.textContent = cfg.name; });
+          document.querySelectorAll('.feed-avatar').forEach(function (e) { e.alt = 'Avatar da ' + cfg.name; });
+          document.querySelectorAll('.verification-item span').forEach(function (e) {
+            if (/Chat ao vivo com a /.test(e.textContent)) e.textContent = 'Chat ao vivo com a ' + cfg.name;
+            if (/Video chamada com a /.test(e.textContent)) e.textContent = 'Video chamada com a ' + cfg.name;
+          });
+        }
+        if (cfg.username) {
+          document.querySelectorAll('.profile-username, .popup-profile-username, .feed-handle')
+            .forEach(function (e) { e.textContent = cfg.username; });
+        }
+        if (cfg.avatar) {
+          var a = document.getElementById('profileAvatar');
+          if (a) a.src = cfg.avatar;
+          document.querySelectorAll('.popup-profile-image img, .feed-avatar')
+            .forEach(function (e) { e.src = cfg.avatar; });
+        }
+        if (cfg.cover) {
+          document.querySelectorAll('.cover-image img, .popup-cover-image img')
+            .forEach(function (e) { e.src = cfg.cover; });
+        }
+        [1, 2, 3].forEach(function (i) {
+          var u = cfg['video' + i];
+          if (!u) return;
+          var v = document.querySelector('video.locked-media[data-mm-video="' + i + '"]');
+          if (!v) return;
+          v.src = u;
+          if (cfg.cover) v.poster = cfg.cover;
+          try { v.load(); } catch (e) {}
+        });
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+      else run();
+    }
+    fetch('/api/config', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(apply)
+      .catch(function () {});
+  })();
+  </script>
+  <meta http-equiv="content-type" content="text/html;charset=UTF-8">
+  <!-- fbevents local removido (conflitava com o CDN do Facebook) -->
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ff6b3d">
+  <!-- Verificacao de dominio da Meta (conteudosanaac.online). Precisa ficar
+       estatica no <head>: a Meta le o HTML cru, sem executar JavaScript. -->
+  <meta name="facebook-domain-verification" content="hefjowhha7qj4jt0zqigra3c0vflcz" />
+  <link rel="icon" type="image/jpeg" href="images/avatar.jpg">
+  <link rel="apple-touch-icon" href="images/avatar.jpg">
+  <link rel="stylesheet" href="css/index.css?v=20260513a">
+  <link rel="stylesheet" href="css/popup.css?v=20260513a">
+  <link rel="stylesheet" href="css/all.min.css?v=20260513a">
+
+  <!-- VIP gate: lead que já completou o funil vê a tela de Acesso Liberado em vez da vitrine -->
+  <script>
+  (function(){
+    try {
+      var flag = localStorage.getItem('wp_funnel_completed_v1');
+      console.log('[WP] VIP gate check: wp_funnel_completed_v1=' + flag);
+      if (flag === 'true') {
+        document.documentElement.classList.add('wp-vip-completed');
+        console.log('[WP] VIP gate ATIVO → vai mostrar tela Acesso Liberado');
+      }
+    } catch(e) {
+      console.log('[WP] VIP gate ERRO:', e.message);
+    }
+  })();
+  </script>
+  <style>
+    html.wp-vip-completed .main-container,
+    html.wp-vip-completed footer,
+    html.wp-vip-completed [data-hide-on-vip] { display:none !important; }
+    html.wp-vip-completed #vipGateScreen { display:flex !important; }
+    #vipGateScreen { display:none; }
+    .vip-screen { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px 20px; background:linear-gradient(180deg,#0f0f14 0%, #1a1015 100%); font-family:'Montserrat',system-ui,sans-serif; }
+    .vip-card { width:100%; max-width:420px; background:#fff; border-radius:20px; padding:36px 28px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.4); }
+    .vip-icon { width:84px; height:84px; margin:0 auto 18px; background:linear-gradient(135deg,#10b981,#34d399); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:42px; box-shadow:0 8px 24px rgba(16,185,129,0.35); }
+    .vip-title { font-size:28px; font-weight:800; color:#111827; margin:0 0 8px; line-height:1.2; }
+    .vip-sub { font-size:15px; color:#4b5563; margin:0 0 26px; line-height:1.5; }
+    .vip-cta { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:18px 20px; background:linear-gradient(135deg,#ff6b3d,#ff8f5f); color:#fff; font-size:18px; font-weight:800; border-radius:14px; text-decoration:none; box-shadow:0 8px 24px rgba(255,107,61,0.4); transition:transform .15s ease, box-shadow .15s ease; }
+    .vip-cta:hover, .vip-cta:active { transform:translateY(-1px); box-shadow:0 12px 28px rgba(255,107,61,0.5); }
+    .vip-cta i { font-size:20px; }
+    .vip-meta { font-size:12px; color:#9ca3af; margin:18px 0 0; }
+    .vip-buy-again { display:inline-block; margin-top:22px; font-size:12px; color:#9ca3af; text-decoration:underline; cursor:pointer; background:none; border:none; padding:6px 12px; font-family:inherit; }
+    .vip-buy-again:hover { color:#6b7280; }
+  </style>
+
+  <!-- TikTok: rastreamento 100% SERVER-SIDE (Events API nas functions).
+       SEM pixel client-side de propósito: o SDK do navegador reportava o
+       domínio REAL desta página pro TikTok ("Connected domains") e furava o
+       cloaker. Aqui só capturamos o ttclid pra repassar ao servidor (atribuição). -->
+  <script>
+    try {
+      var _ttclid = new URLSearchParams(window.location.search).get('ttclid');
+      if (_ttclid) sessionStorage.setItem('ttclid', _ttclid);
+    } catch(e) {}
+  </script>
+
+  <!-- Meta Pixel -->
+  <script>
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '2174746753476485');
+    fbq('track', 'PageView');
+    // Exposto pro wiinpay-checkout.js reinicializar o pixel com Correspondencia
+    // Avancada assim que o cliente digitar nome e e-mail no checkout.
+    window.WP_META_PIXEL_ID = '2174746753476485';
+  </script>
+  <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=2174746753476485&ev=PageView&noscript=1"/></noscript>
+
+  <!-- Kwai Pixel -->
+  <script>
+!function(e,t){"object"==typeof exports&&"object"==typeof module?module.exports=t():"function"==typeof define&&define.amd?define([],t):"object"==typeof exports?exports.install=t():e.install=t()}("undefined"!=typeof window?window:self,(function(){return function(e){var t={};function n(o){if(t[o])return t[o].exports;var r=t[o]={i:o,l:!1,exports:{}};return e[o].call(r.exports,r,r.exports,n),r.l=!0,r.exports}return n.m=e,n.c=t,n.d=function(e,t,o){n.o(e,t)||Object.defineProperty(e,t,{enumerable:!0,get:o})},n.r=function(e){"undefined"!=typeof Symbol&&Symbol.toStringTag&&Object.defineProperty(e,Symbol.toStringTag,{value:"Module"}),Object.defineProperty(e,"__esModule",{value:!0})},n.t=function(e,t){if(1&t&&(e=n(e)),8&t)return e;if(4&t&&"object"==typeof e&&e&&e.__esModule)return e;var o=Object.create(null);if(n.r(o),Object.defineProperty(o,"default",{enumerable:!0,value:e}),2&t&&"string"!=typeof e)for(var r in e)n.d(o,r,function(t){return e[t]}.bind(null,r));return o},n.n=function(e){var t=e&&e.__esModule?function(){return e.default}:function(){return e};return n.d(t,"a",t),t},n.o=function(e,t){return Object.prototype.hasOwnProperty.call(e,t)},n.p="",n(n.s=72)}({72:function(e,t,n){"use strict";var o=this&&this.__spreadArray||function(e,t,n){if(n||2===arguments.length)for(var o,r=0,i=t.length;r<i;r++)!o&&r in t||(o||(o=Array.prototype.slice.call(t,0,r)),o[r]=t[r]);return e.concat(o||Array.prototype.slice.call(t))};Object.defineProperty(t,"__esModule",{value:!0});var r=function(e,t,n){var o,i=e.createElement("script");i.type="text/javascript",i.async=!0,i.src=t,n&&(i.onerror=function(){r(e,n)});var a=e.getElementsByTagName("script")[0];null===(o=a.parentNode)||void 0===o||o.insertBefore(i,a)};!function(e,t,n){e.KwaiAnalyticsObject=n;var i=e[n]=e[n]||[];i.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"];var a=function(e,t){e[t]=function(){for(var n=[],r=0;r<arguments.length;r++)n[r]=arguments[r];var i=o([t],n,!0);e.push(i)}};i.methods.forEach((function(e){a(i,e)})),i.instance=function(e){var t,n=(null===(t=i._i)||void 0===t?void 0:t[e])||[];return i.methods.forEach((function(e){a(n,e)})),n},i.load=function(e,o){var a="https://s21-def.ap4r.com/kos/s101/nlav112572/pixel/events.js";i._i=i._i||{},i._i[e]=[],i._i[e]._u=a,i._t=i._t||{},i._t[e]=+new Date,i._o=i._o||{},i._o[e]=o||{};var c="?sdkid=".concat(e,"&lib=").concat(n);r(t,a+c,"https://s21-def.ks-la.net/kos/s101/nlav112572/pixel/events.js"+c)}}(window,document,"kwaiq")}})}));
+  </script>
+  <script>
+    kwaiq.load('320182284382320');
+    kwaiq.load('320273475037507');
+    kwaiq.page();
+  </script>
+
+  <!-- UTMify -->
+  <script src="https://cdn.utmify.com.br/scripts/utms/latest.js" data-utmify-prevent-xcod-sck data-utmify-prevent-subids async defer></script>
+
+  <!-- Back redirect removido - checkout via WiinPay PIX -->
+
+  <style type="text/css">
+    /* Evitar que notificações cubram o popup */
+    body.popup-active #notification-container {
+      display: none !important;
+    }
+
+    /* Posição e comportamento padrão das notificações */
+    #notification-container {
+      position: fixed !important;
+      bottom: 20px !important;
+      right: 20px !important;
+      left: auto !important;
+      max-width: 320px !important;
+      z-index: 999 !important; /* abaixo do overlay do popup (9999) */
+      pointer-events: none; /* não intercepta cliques */
+    }
+
+    #notification-container > div { pointer-events: auto; }
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 300;
+      src: url(fonts/normal_1.woff2);
+      unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 300;
+      src: url(fonts/normal.woff2);
+      unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 300;
+      src: url(fonts/normal_2.woff2);
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 300;
+      src: url(fonts/normal_3.woff2);
+      unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 300;
+      src: url(fonts/normal_4.woff2);
+      unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 400;
+      src: url(fonts/normal.woff2);
+      unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 400;
+      src: url(fonts/normal_4.woff2);
+      unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 400;
+      src: url(fonts/normal_1.woff2);
+      unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 400;
+      src: url(fonts/normal_2.woff2);
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 400;
+      src: url(fonts/normal_3.woff2);
+      unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 500;
+      src: url(fonts/normal_1.woff2);
+      unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 500;
+      src: url(fonts/normal_4.woff2);
+      unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 500;
+      src: url(fonts/normal.woff2);
+      unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 500;
+      src: url(fonts/normal_3.woff2);
+      unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 500;
+      src: url(fonts/normal_2.woff2);
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 600;
+      src: url(fonts/normal_3.woff2);
+      unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 600;
+      src: url(fonts/normal_4.woff2);
+      unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 600;
+      src: url(fonts/normal_2.woff2);
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 600;
+      src: url(fonts/normal_1.woff2);
+      unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 600;
+      src: url(fonts/normal.woff2);
+      unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 700;
+      src: url(fonts/normal_1.woff2);
+      unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 700;
+      src: url(fonts/normal.woff2);
+      unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 700;
+      src: url(fonts/normal_2.woff2);
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 700;
+      src: url(fonts/normal_4.woff2);
+      unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 700;
+      src: url(fonts/normal_3.woff2);
+      unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 800;
+      src: url(fonts/normal.woff2);
+      unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 800;
+      src: url(fonts/normal_2.woff2);
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 800;
+      src: url(fonts/normal_1.woff2);
+      unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 800;
+      src: url(fonts/normal_4.woff2);
+      unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 800;
+      src: url(fonts/normal_3.woff2);
+      unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 900;
+      src: url(fonts/normal_4.woff2);
+      unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 900;
+      src: url(fonts/normal_3.woff2);
+      unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 900;
+      src: url(fonts/normal_2.woff2);
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 900;
+      src: url(fonts/normal_1.woff2);
+      unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: Montserrat;
+      font-style: normal;
+      font-weight: 900;
+      src: url(fonts/normal.woff2);
+      unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+      font-display: swap;
+    }
+  </style>
+
+  <!-- CSS para padronizar tamanhos, bordas e espaçamentos -->
+  <style>
+    /* Container padrão para vídeo e primeira imagem */
+    .content-section .video-container,
+    .content-section .photo-container {
+      width: 388px;
+      height: 670px;
+      overflow: hidden;
+    }
+
+    /* Elementos internos preenchem o container */
+    .content-section .video-container video,
+    .content-section .photo-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Novo container para a segunda imagem: 350x670 */
+    .content-section .photo-container2 {
+      width: 350px;
+      height: 670px;
+      overflow: hidden;
+      /* Altere o valor de margin-left para mover horizontalmente a segunda imagem:
+           Valor positivo move para a direita; valor negativo para a esquerda */
+      margin-left: 7px;
+    }
+
+    .content-section .photo-container2 img {
+      width: 100%;
+      height: 100%;
+      /* Alterado de 120% para 100% para garantir bordas arredondadas */
+      object-fit: cover;
+    }
+
+    /* Aplica bordas arredondadas em ambas as imagens */
+    .content-section .photo-container img,
+    .content-section .photo-container2 img {
+      border-radius: 15px;
+    }
+
+    /* Espaçamento vertical para o segundo container */
+    .second-photo-section {
+      margin-top: 10px;
+      /* ajuste conforme necessário */
+    }
+
+    .old-price {
+      text-decoration: line-through;
+      text-decoration-color: rgba(255, 255, 255, 0.7);
+      font-size: 13px;
+      margin-right: 4px;
+    }
+
+    .top-bar {
+      background: #ff6b3d;
+      padding: 3px 0;
+      margin-bottom: 0;
+    }
+
+    .top-bar-content {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 50px;
+      color: white;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 15px;
+    }
+
+    .top-bar-content span {
+      font-size: 12px;
+    }
+
+    /* Estiliza o aviso de promoção para ficar mais profissional */
+    .privacy-logo {
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    /* Pulse para indicador verde das notificações */
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+
+    /* Promotions */
+    .promotions {
+      margin-top: 1.5rem;
+    }
+
+    .promotions-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+    }
+
+    .promotions-header h4 {
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .chevron {
+      color: var(--gray-400);
+      transition: transform 0.3s ease;
+    }
+
+    /* Content Tabs */
+    .content-tabs {
+      /* margin-bottom: 2rem; */
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+
+    .tab {
+      padding: 0.75rem;
+      text-align: center;
+      font-size: 0.875rem;
+      background-color: var(--gray-100);
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      color: var(--gray-600);
+    }
+
+    .tab.active {
+      background-color: var(--orange-50);
+      color: var(--orange-500);
+      font-weight: 500;
+    }
+
+    .tab:first-child.active {
+      box-shadow: inset -1px 0 0 var(--orange-200);
+    }
+
+    .tab:last-child.active {
+      box-shadow: inset 1px 0 0 var(--orange-200);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    /* Pricing panel (Assinaturas) */
+    .pricing-panel {
+      background: #ffffff;
+      border: 1px solid #ececec;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+      max-width: 380px;
+      margin: 0 auto;
+    }
+
+    .pricing-panel h3 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #111827;
+      margin: 0 0 10px 0;
+    }
+
+    .tag-popular {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #fff1e6;
+      color: #b45309;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      margin-bottom: 10px;
+    }
+
+    /* Badge promocional fora da tag principal, alinhada ao lado */
+    .header-promo {
+      margin-left: 8px;
+      vertical-align: middle;
+      display: inline-flex;
+    }
+
+  .pricing-panel a { text-decoration: none; }
+  .pricing-panel a:hover { text-decoration: none; }
+  /* Garantir que nenhum texto nos botões/links fique sublinhado */
+  .plan-primary,
+  .plan-primary:hover,
+  .plan-primary:focus,
+  .plan-primary:active,
+  .plan-primary:visited,
+  .plan-outline,
+  .plan-outline:hover,
+  .plan-outline:focus,
+  .plan-outline:active,
+  .plan-outline:visited,
+  .footer-cta a,
+  .footer-cta a:hover,
+  .footer-cta a:focus,
+  .footer-cta a:active,
+  .footer-cta a:visited { text-decoration: none !important; }
+  .plan-primary *, .plan-outline * { text-decoration: none !important; }
+
+    .plan-primary {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: linear-gradient(180deg, #ff7a1a 0%, #ff6b3d 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 16px;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(255, 107, 61, 0.28);
+      transition: transform 0.06s ease, box-shadow 0.25s ease;
+      font-weight: 800;
+      position: relative;
+      overflow: hidden;
+      text-decoration: none;
+    }
+
+    .plan-primary:hover {
+      box-shadow: 0 14px 30px rgba(255, 107, 61, 0.38);
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+
+    .plan-primary:active { transform: translateY(1px); }
+
+    .plan-primary .plan-title { font-size: 16px; letter-spacing: 0.3px; text-decoration: none; }
+  .plan-primary .plan-price { font-size: 20px; letter-spacing: 0.3px; text-decoration: none; text-shadow: 0 1px 0 rgba(0,0,0,0.18); flex-shrink: 0; white-space: nowrap; }
+    .plan-primary .plan-price::after { content: "  →"; font-weight: 900; }
+  .plan-primary .mini-badge { margin-left: 4px; }
+
+    /* shimmer */
+    .plan-primary::before {
+      content: "";
+      position: absolute;
+      top: 0; left: -60%;
+      width: 40%; height: 100%;
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.28) 50%, rgba(255,255,255,0) 100%);
+      transform: skewX(-20deg);
+      animation: shimmer 2.4s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { left: -60%; }
+      100% { left: 120%; }
+    }
+
+    .perk-chip {
+      display: inline-block;
+      margin-top: 8px;
+      background: #ffe8d9;
+      color: #7c2d12;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .plan-outline {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: nowrap; /* evita quebra para segunda linha */
+      gap: 12px;
+      background: #ffffff;
+      border: 1px solid #f5b490;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-top: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .plan-outline:hover {
+      border-color: #ff6b3d;
+      box-shadow: 0 6px 16px rgba(255, 107, 61, 0.12);
+    }
+
+    .plan-outline .left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #111827;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap; /* evita quebra entre rótulo e badge */
+      min-width: 0; /* permite encolher quando o espaço é curto */
+    }
+
+    .plan-outline .right {
+      color: #111827;
+      font-weight: 800;
+      text-decoration: none;
+      white-space: nowrap; /* mantém o preço em uma linha */
+      flex: 0 0 auto; /* não deixa o preço encolher a ponto de quebrar */
+    }
+
+    .mini-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      background: #f3f4f6;
+      border-radius: 999px;
+      white-space: nowrap; /* badge não quebra */
+    }
+
+    .plan-label { white-space: nowrap; }
+
+    @media (max-width: 380px) {
+      .plan-outline { padding: 10px 12px; }
+      .plan-outline .left { gap: 6px; }
+      .mini-badge { font-size: 11px; padding: 2px 6px; }
+      .plan-label { font-size: 14px; }
+      .plan-outline .right { font-size: 14px; }
+    }
+
+    /* Telas extra estreitas: reserva espaço para o preço e limita a largura da seção esquerda */
+    @media (max-width: 360px) {
+      .plan-outline .left { max-width: calc(100% - 96px); } /* ~96px reservados ao preço */
+      .plan-outline { gap: 8px; }
+    }
+    @media (max-width: 320px) {
+      .plan-outline .left { max-width: calc(100% - 88px); }
+      .plan-label { font-size: 13px; }
+      .plan-outline .right { font-size: 13px; }
+      .mini-badge { font-size: 10px; padding: 2px 5px; }
+    }
+
+    .mini-badge.best {
+      background: #fff1e6;
+      color: #b45309;
+    }
+
+    .mini-badge.premium {
+      background: #e9f5ff;
+      color: #0b62a4;
+    }
+
+    /* Mini-badge verde clarinho para 'Promocional' */
+    .mini-badge.promo {
+      background: #ecfdf5; /* verde bem claro */
+      color: #047857;     /* verde escuro para contraste */
+    }
+
+    /* Footer CTA container */
+    .footer-cta {
+      max-width: 380px;
+      margin: 28px auto 16px;
+      padding: 0 16px;
+    }
+
+    /* Notification container (bottom-right) */
+    #notification-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 9999;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      pointer-events: none; /* permite clicar através quando não sobre toasts */
+    }
+    #notification-container > div { pointer-events: auto; }
+
+    /* Destaque para o plano recomendado (3 Meses) */
+    .plan-outline.featured {
+      border-color: #ff6b3d;
+      background: #fff7f3;
+      box-shadow: 0 8px 20px rgba(255, 107, 61, 0.12);
+    }
+
+    /* Ícone sutil no plano em destaque */
+    .plan-outline.featured .left::before {
+      content: "\1F451"; /* 👑 */
+      display: inline-block;
+      margin-right: 6px;
+      font-size: 16px;
+    }
+
+    /* Chevron color override for this card */
+    .chevron { color: #9ca3af; }
+
+    .trust-inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      color: #6b7280;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;      /* evita quebra de linha */
+      flex-wrap: nowrap;        /* mantém tudo em uma linha */
+    }
+    .trust-inline span { white-space: nowrap; }
+    .trust-inline i { color: #10b981; margin-right: 4px; }
+    @media (max-width: 380px) { .trust-inline { font-size: 11px; gap: 6px; } }
+    @media (max-width: 340px) { .trust-inline { font-size: 10px; gap: 4px; } }
+
+    /* ===== Feed style gallery (cards) ===== */
+  .feed-gallery { max-width: 560px; margin: 18px auto 0; padding: 0 16px; }
+    .feed-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .feed-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(16,24,40,0.04);
+      contain: content; /* isola pintura/layout para melhorar performance */
+      content-visibility: auto; /* evita pintar fora da viewport em navegadores compatíveis */
+      contain-intrinsic-size: 640px; /* reserva altura aproximada para evitar CLS */
+    }
+  @media (max-width: 600px) { .feed-card { box-shadow: 0 1px 1px rgba(0,0,0,0.06); } }
+  .feed-header { display: flex; align-items: center; gap: 10px; padding: 10px; }
+  .feed-avatar { width: 28px; height: 28px; border-radius: 999px; object-fit: cover; flex: 0 0 auto; }
+  .feed-head-text { display: flex; flex-direction: column; line-height: 1.1; flex: 1 1 auto; min-width: 0; }
+  .feed-name { font-weight: 700; color: #111827; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feed-handle { color: #6b7280; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feed-media { position: relative; width: 100%; aspect-ratio: 9/16; background: #f3f4f6; overflow: hidden; }
+  .feed-media .locked-media { width: 100%; height: 100%; object-fit: cover; filter: blur(12px); -webkit-filter: blur(12px); transform: scale(1.08); }
+  /* Promove o vídeo para camada própria em mobile, reduzindo jank */
+  @media (max-width: 600px) {
+    .feed-media .locked-media { backface-visibility: hidden; transform: translateZ(0); will-change: transform; }
+  }
+    .lock-bubble {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 68px; height: 68px; border-radius: 999px; background: rgba(255,255,255,0.92);
+      display: grid; place-items: center; box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+      color: #9ca3af; font-size: 22px; cursor: pointer;
+    }
+    @media (max-width: 600px) {
+      .lock-bubble { box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
+    }
+    .stats-pill {
+      position: absolute; bottom: 10px; left: 10px; display: inline-flex; align-items: center; gap: 12px;
+      background: rgba(17,24,39,0.65); color: #fff; padding: 8px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+    }
+    .stats-pill i { margin-right: 6px; }
+    .feed-footer { display: flex; align-items: center; justify-content: space-around; padding: 10px; color: #6b7280; }
+    .feed-footer i { font-size: 16px; }
+  /* Força 1 coluna em todas as larguras */
+  @media (max-width: 680px) { .feed-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 360px) {
+    .feed-name { font-size: 12px; }
+    .feed-handle { font-size: 11px; }
+    .feed-header { gap: 8px; padding: 8px; }
+  }
+
+    .tab-content.active {
+      display: block;
+      /* display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px */
+    }
+
+    /* Estilos para o container de navegação */
+    .nav-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      height: 70px;
+      /* Altura do container */
+      background-color: #fff;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Estilos para o logo */
+    .logo {
+      width: 175px; /* largura máxima do espaço do logo */
+      height: 70px; /* altura do espaço do logo */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto; /* Centraliza horizontalmente */
+      overflow: hidden; /* evita vazamento visual */
+    }
+
+    .logo img {
+      height: 100%;          /* respeita a altura do container */
+      width: auto;           /* mantém proporção */
+      max-width: 100%;       /* não estoura lateralmente */
+      object-fit: contain;   /* garante encaixe sem cortar */
+      display: block;
+    }
+
+    /* Estilos para o container direito */
+    .right-container {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    /* Estilos para o container de busca */
+    .search-container {
+      display: flex;
+      align-items: center;
+      width: 300px;
+      /* Largura do campo de busca */
+      height: 40px;
+      /* Altura do campo de busca */
+    }
+
+    .search-container input {
+      width: 100%;
+      height: 100%;
+      padding: 0 15px;
+      border: 1px solid #ddd;
+      border-radius: 20px;
+      font-size: 14px;
+    }
+
+    .search-button {
+      width: 40px;
+      /* Largura do botão de busca */
+      height: 40px;
+      /* Altura do botão de busca */
+      border: none;
+      background: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Estilos para os ícones de navegação */
+    .nav-icons {
+      display: flex;
+      gap: 15px;
+    }
+
+    .icon-button {
+      width: 40px;
+      /* Largura dos botões de ícone */
+      height: 40px;
+      /* Altura dos botões de ícone */
+      border: none;
+      background: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: background-color 0.3s;
+    }
+
+    .icon-button:hover {
+      background-color: #f5f5f5;
+    }
+
+    /* Estilos para o menu mobile */
+    .menu-mobile {
+      display: none;
+      /* Esconde em desktop */
+      width: 30px;
+      height: 30px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    /* Media query para dispositivos móveis */
+    @media (max-width: 768px) {
+      .nav-container {
+        height: 60px;
+        padding: 10px 15px;
+      }
+
+      .logo {
+        width: 140px; /* menor no mobile */
+        height: 56px;
+        overflow: hidden; /* reforça que não vaze no mobile */
+      }
+
+      .search-container {
+        display: none;
+        /* Esconde a busca em mobile */
+      }
+
+      .nav-icons {
+        display: none;
+        /* Esconde os ícones em mobile */
+      }
+
+      .menu-mobile {
+        display: block;
+        /* Mostra o menu mobile */
+      }
+    }
+
+    /* Ajustes do aviso no topo para mobile */
+    @media (max-width: 600px) {
+      .top-bar-content {
+        gap: 10px;
+        justify-content: center;
+        padding: 0 10px;
+      }
+
+      /* Esconde a imagem lateral no topo no mobile para evitar quebra */
+      .top-bar-content > img {
+        display: none;
+      }
+
+      .privacy-logo {
+        font-size: 12px;
+        padding: 6px 14px;
+        background: rgba(255, 255, 255, 0.14);
+      }
+    }
+
+    /* Estilos para os botões de assinatura */
+    .subscription-button {
+      background: linear-gradient(135deg, #ff6b3d 0%, #ff8f5f 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      max-width: 320px;
+      margin: 12px auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 6px rgba(255, 107, 61, 0.1);
+      position: relative;
+      overflow: hidden;
+      animation: pulse 2s infinite;
+    }
+
+    .subscription-button::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg,
+          transparent,
+          rgba(255, 255, 255, 0.3),
+          transparent);
+      transition: 0.5s;
+    }
+
+    .subscription-button:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 8px 20px rgba(255, 107, 61, 0.3);
+    }
+
+    .subscription-button:hover::before {
+      left: 100%;
+    }
+
+    .subscription-button:active {
+      transform: translateY(0) scale(0.98);
+      box-shadow: 0 2px 4px rgba(255, 107, 61, 0.1);
+    }
+
+    .subscription-button span {
+      display: inline-block;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .subscription-button span:first-child {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .subscription-button span:last-child {
+      font-size: 14px;
+      opacity: 0.95;
+      font-weight: 500;
+    }
+
+    /* Estilos para o botão do popup */
+    .subscription-button-popup {
+      background: linear-gradient(135deg, #ff6b3d 0%, #ff8f5f 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      max-width: 320px;
+      margin: 12px auto 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 6px rgba(255, 107, 61, 0.1);
+      position: relative;
+      overflow: hidden;
+      animation: pulse 2s infinite;
+    }
+
+    .subscription-button-popup::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg,
+          transparent,
+          rgba(255, 255, 255, 0.3),
+          transparent);
+      transition: 0.5s;
+    }
+
+    .subscription-button-popup:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 8px 20px rgba(255, 107, 61, 0.3);
+    }
+
+    .subscription-button-popup:hover::before {
+      left: 100%;
+    }
+
+    .subscription-button-popup:active {
+      transform: translateY(0) scale(0.98);
+      box-shadow: 0 2px 4px rgba(255, 107, 61, 0.1);
+    }
+
+    .subscription-button-popup span {
+      display: inline-block;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .subscription-button-popup span:first-child {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .subscription-button-popup span:last-child {
+      font-size: 14px;
+      opacity: 0.95;
+      font-weight: 500;
+    }
+
+    /* Reset para botões que eram <a> e agora são <button> */
+    button.plan-primary,
+    button.plan-outline {
+      font-family: 'Montserrat', system-ui, sans-serif;
+      font-size: inherit;
+      line-height: inherit;
+      text-align: left;
+    }
+
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 4px 6px rgba(255, 107, 61, 0.1);
+      }
+
+      50% {
+        box-shadow: 0 4px 15px rgba(255, 107, 61, 0.4);
+      }
+
+      100% {
+        box-shadow: 0 4px 6px rgba(255, 107, 61, 0.1);
+      }
+    }
+
+    /* Espaço extra abaixo do botão "Mostrar mais" */
+    .bio-toggle { display: inline-block; margin-bottom: 16px; }
+
+    /* Bio que já cabe inteira no clamp de 3 linhas: sem botão e sem o degradê
+       branco do .bio-text::after, que senão apaga a última linha do texto.
+       A classe .bio-fits é posta pelo main.js (syncBioToggle). */
+    .bio-container.bio-fits .bio-text { max-height: none; }
+    .bio-container.bio-fits .bio-text::after { display: none; }
+    .bio-container.bio-fits .bio-toggle { display: none; }
+
+    /* ── AO VIVO AGORA ── */
+    .profile-avatar-group{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .profile-image-circle{
+      width:120px; height:120px;
+      border: 3px solid red;
+      border-radius: 50%;
+      overflow:hidden;
+      background:#fff;
+      display:flex; align-items:center; justify-content:center;
+      animation: ringPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes ringPulse{
+      0%, 100% { box-shadow: 0 0 0 0 rgba(221,0,0,.6); }
+      50%       { box-shadow: 0 0 0 6px rgba(221,0,0,0); }
+    }
+    .profile-image{ width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; }
+    .live-badge{
+      position: static;
+      display: block;
+      text-align: left;
+      margin-top: 4px;
+      margin-bottom: 8px;
+      background: red; color: #fff;
+      font-size: 11px; font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .live-dot{
+      display: inline-block;
+      animation: dotPulse 1s ease-in-out infinite;
+    }
+    @keyframes dotPulse{
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.2; }
+    }
+    /* ── Shimmer no badge verificado ── */
+    .verified{
+      position: relative;
+      overflow: hidden;
+      border-radius: 50%;
+    }
+    .verified::before{
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -75%;
+      width: 50%;
+      height: 200%;
+      background: linear-gradient(
+        to right,
+        rgba(255,255,255,0) 0%,
+        rgba(255,255,255,0.7) 50%,
+        rgba(255,255,255,0) 100%
+      );
+      transform: skewX(-20deg);
+      animation: verifiedShine 2.5s ease-in-out infinite;
+    }
+    @keyframes verifiedShine{
+      0%        { left: -75%; }
+      40%, 100% { left: 150%; }
+    }
+
+    /* ── Depoimentos ── */
+    .testimonials-section{padding:24px 16px;background:#f5f5f5;border-top:1px solid #e8e8e8;margin-top:20px}
+    .testimonials-section h3{font-size:17px;font-weight:800;text-align:center;margin-bottom:16px;color:#111}
+    .testimonials-track{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:8px;scrollbar-width:thin}
+    .testimonials-track::-webkit-scrollbar{height:4px}
+    .testimonials-track::-webkit-scrollbar-thumb{background:#ccc;border-radius:4px}
+    .testimonial-card{min-width:200px;max-width:200px;scroll-snap-align:start;background:#fff;border-radius:14px;padding:16px 14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.07);flex-shrink:0}
+    .testimonial-avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 10px}
+    .testimonial-card .t-name{font-weight:700;font-size:13px;margin-bottom:6px;color:#111}
+    .testimonial-card .t-text{font-size:12px;color:#555;line-height:1.5}
+
+    /* ── Super Combo ── */
+    .super-combo-section{padding:28px 16px;background:#111;border-top:2px solid #ff6b3d}
+    .super-combo-section h3{font-size:18px;font-weight:800;text-align:center;color:#fff;margin-bottom:4px}
+    .super-combo-section .combo-sub{text-align:center;color:#aaa;font-size:13px;margin-bottom:20px}
+    .combo-items{list-style:none;padding:0;margin:0 0 20px}
+    .combo-items li{color:#fff;font-size:14px;padding:8px 0;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px}
+    .combo-items li::before{content:'✅';font-size:15px;flex-shrink:0}
+    .combo-reveal-btn{width:100%;padding:16px;background:linear-gradient(135deg,#ff6b3d,#ff3d00);border:none;border-radius:12px;color:#fff;font-size:17px;font-weight:800;cursor:pointer;box-shadow:0 4px 20px rgba(255,107,61,.4);transition:transform .15s}
+    .combo-reveal-btn:hover{transform:translateY(-2px)}
+    .combo-price-reveal{display:none;text-align:center;margin-top:16px}
+    .combo-price-reveal.visible{display:block}
+    .combo-price-label{color:#aaa;font-size:13px;margin-bottom:4px}
+    .combo-price-value{color:#ff6b3d;font-size:34px;font-weight:900;margin-bottom:14px}
+    .combo-buy-btn{width:100%;padding:14px;background:#ff6b3d;border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:800;cursor:pointer;transition:transform .15s}
+    .combo-buy-btn:hover{transform:translateY(-2px)}
+
+    /* ── Plano PREMIUM (Super Combo dentro da lista de promoções) ──
+       Fundo preto pra destacar como o mais completo, e os beneficios
+       recolhidos atras da setinha: no celular a lista aberta ocupava
+       tela demais e empurrava o resto da pagina pra baixo. */
+    .plan-premium{position:relative;margin-top:16px;background:linear-gradient(160deg,#1c1c1c 0%,#080808 100%);border:1px solid rgba(255,107,61,.55);border-radius:14px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.35),0 0 0 1px rgba(255,107,61,.08)}
+    .plan-premium::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#ff6b3d,#ffb03d,#ff6b3d)}
+    .plan-premium-badge{display:inline-flex;align-items:center;gap:5px;margin:14px 0 0 14px;padding:4px 10px;border-radius:999px;background:linear-gradient(135deg,#ff6b3d,#ff3d00);color:#fff;font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;box-shadow:0 3px 10px rgba(255,61,0,.35)}
+    .plan-premium-buy{width:100%;display:block;background:transparent;border:none;padding:10px 14px 16px;cursor:pointer;text-align:left;font-family:inherit}
+    .plan-premium-title{display:block;color:#fff;font-size:17px;font-weight:800;line-height:1.25;margin-bottom:3px}
+    .plan-premium-sub{display:block;color:#9a9a9a;font-size:12px;line-height:1.4;margin-bottom:14px}
+    .plan-premium-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .plan-premium-price{color:#ff8f5f;font-size:26px;font-weight:900;line-height:1;white-space:nowrap}
+    .plan-premium-cta{display:inline-flex;align-items:center;gap:7px;padding:11px 18px;border-radius:10px;background:linear-gradient(135deg,#ff6b3d,#ff3d00);color:#fff;font-size:13px;font-weight:800;white-space:nowrap;box-shadow:0 4px 14px rgba(255,61,0,.35);transition:transform .15s ease,box-shadow .15s ease}
+    .plan-premium-buy:hover .plan-premium-cta{transform:translateY(-2px);box-shadow:0 7px 20px rgba(255,61,0,.5)}
+    .plan-premium-toggle{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;background:rgba(255,255,255,.03);border:none;border-top:1px solid #262626;padding:11px 14px;color:#b0b0b0;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+    .plan-premium-toggle:hover{color:#fff;background:rgba(255,255,255,.06)}
+    .plan-premium-toggle .chev{transition:transform .25s ease;display:inline-block;color:#ff6b3d;font-size:14px}
+    .plan-premium-toggle[aria-expanded="true"] .chev{transform:rotate(180deg)}
+    .plan-premium-list{margin:0;padding:4px 16px 16px;border-top:1px solid #1e1e1e}
+    .plan-premium-list li{font-size:13px;padding:8px 0;border-bottom:1px solid #1a1a1a}
+    .plan-premium-list li:last-child{border-bottom:none}
+    @media (max-width:480px){
+      .plan-premium-title{font-size:16px}
+      .plan-premium-price{font-size:23px}
+      .plan-premium-cta{padding:10px 14px;font-size:12px}
+      .plan-premium-list li{font-size:12.5px}
+    }
+    @media (max-width:340px){
+      .plan-premium-row{flex-direction:column;align-items:stretch;gap:12px}
+      .plan-premium-cta{justify-content:center}
+    }
+  </style>
+</head>
+
+<body>
+<!-- Tela de Acesso Liberado (visível só pra leads que completaram o funil) -->
+<div id="vipGateScreen" class="vip-screen">
+  <div class="vip-card">
+    <div class="vip-icon"><i class="fas fa-check"></i></div>
+    <h1 class="vip-title">Acesso Liberado</h1>
+    <p class="vip-sub">Você já é VIP! Toca no botão abaixo pra entrar no grupo:</p>
+    <a id="vipCtaBtn" href="#" class="vip-cta" rel="noopener"><i class="fas fa-paper-plane"></i> Entrar no Grupo VIP</a>
+    <p id="vipMeta" class="vip-meta"></p>
+    <button id="vipBuyAgain" type="button" class="vip-buy-again">Quero comprar outro plano</button>
+  </div>
+</div>
+<script>
+(function(){
+  if (document.documentElement.classList.contains('wp-vip-completed')) {
+    try {
+      var url = localStorage.getItem('wp_vip_url_v1') || '#';
+      var btn = document.getElementById('vipCtaBtn');
+      if (btn) btn.setAttribute('href', url);
+      var ts = localStorage.getItem('wp_funnel_completed_at_v1');
+      if (ts) {
+        var d = new Date(ts);
+        if (!isNaN(d.getTime())) {
+          var fmt = d.toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' }) + ' às ' + d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+          document.getElementById('vipMeta').textContent = 'Liberado em ' + fmt;
+        }
+      }
+      var again = document.getElementById('vipBuyAgain');
+      if (again) again.addEventListener('click', function(){
+        try {
+          localStorage.removeItem('wp_funnel_completed_v1');
+          localStorage.removeItem('wp_funnel_completed_at_v1');
+        } catch(e){}
+        window.location.reload();
+      });
+    } catch(e) {}
+  }
+})();
+</script>
+
+  <header>
+    <nav class="navbar">
+      <div class="top-bar">
+        <div class="top-bar-content">
+          <img src="images/Untitled%20image%20(25).png" width="100px" alt="Privacy Logo">
+
+          <!-- Conteúdo Principal -->
+          <div class="privacy-logo" id="privacy-logo">ESSA PROMOÇÃO É VÁLIDA POR TEMPO LIMITADO</div>
+          <script type="text/javascript">
+    function getFormattedDate(daysAhead = 3) {
+      const today = new Date();
+      today.setDate(today.getDate() + daysAhead);
+      const dd = String(today.getDate()).padStart(2, '0');
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const yyyy = today.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const banner = document.getElementById("privacy-logo");
+      const expirationDate = getFormattedDate(0); // Altere o número para mudar os dias
+      banner.textContent = `ESSA PROMOÇÃO É VÁLIDA ATÉ ${expirationDate}`;
+    });
+  </script>
+        </div>
+      </div>
+      <div class="nav-container">
+        <div class="logo">
+          <img src="images/privacy-logo.svg" alt="Privacy Logo" width="50" height="50" loading="eager" decoding="async">
+        </div>
+        <div class="right-container">
+          <div class="search-container">
+            <input type="text" placeholder="Pesquise aqui..." style="">
+            <button class="search-button" title="Buscar">
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+          <div class="nav-icons">
+            <button class="icon-button" title="Adicionar">
+              <i class="fas fa-plus"></i>
+            </button>
+            <button class="icon-button" title="Comentários">
+              <i class="fas fa-comment-alt"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
+  <main>
+    <div class="main-container">
+      <div class="profile-section">
+        <div class="cover-section">
+          <div class="cover-image">
+            <img src="images/cover.jpg" alt="Imagem de capa" width="640" height="350" fetchpriority="high" decoding="async">
+            <div class="stats">
+              <span><i class="far fa-image"></i> 354</span>
+              <span><i class="fas fa-video"></i> 148</span>
+              <span><i class="far fa-heart"></i> 20.2K</span>
+            </div>
+          </div>
+
+          <div class="profile-info">
+            <!-- AVATAR + BADGE -->
+            <div class="profile-avatar-group">
+              <div class="profile-image-wrap">
+                <div class="profile-image-circle">
+                  <img id="profileAvatar" src="images/avatar.jpg" alt="Foto de Perfil" class="profile-image">
+                </div>
+              </div>
+              <div class="live-badge"><span class="live-dot">●</span> AO VIVO AGORA</div>
+            </div>
+            <div class="profile-text">
+              <div class="profile-name">
+                Mel Maia
+                <span class="verified">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="18" height="18" aria-label="Verificado">
+                    <path fill="#ff6b3d" d="M190.6 71.4C203 47.9 227.7 32 256 32s53 15.9 65.4 39.4c3.6 6.8 11.5 10.1 18.8 7.8c25.4-7.8 54.1-1.6 74.1 18.4s26.2 48.7 18.4 74.1c-2.3 7.3 1 15.2 7.8 18.8C464.1 203 480 227.7 480 256s-15.9 53-39.4 65.4c-6.8 3.6-10.1 11.5-7.8 18.8c7.8 25.4 1.6 54.1-18.4 74.1s-48.7 26.2-74.1 18.4c-7.3-2.3-15.2 1-18.8 7.8C309 464.1 284.3 480 256 480s-53-15.9-65.4-39.4c-3.6-6.8-11.5-10.1-18.8-7.8c-25.4 7.8-54.1 1.6-74.1-18.4s-26.2-48.7-18.4 74.1c-2.3-7.3-1-15.2 7.8-18.8C47.9 309 32 284.3 32 256s15.9-53 39.4-65.4c6.8-3.6 10.1-11.5 7.8-18.8c-7.8-25.4-1.6-54.1 18.4-74.1s48.7-26.2 74.1-18.4c7.3 2.3 15.2-1 18.8-7.8zM256 0c-36.1 0-68 18.1-87.1 45.6c-33-6-68.3 3.8-93.9 29.4s-35.3 60.9-29.4 93.9C18.1 188 0 219.9 0 256s18.1 68 45.6 87.1c-6 33 3.8 68.3 29.4 93.9s60.9 35.3 93.9 29.4C188 493.9 219.9 512 256 512s68-18.1 87.1-45.6c33 6 68.3-3.8 93.9-29.4s35.3-60.9 29.4-93.9C493.9 324 512 292.1 512 256s-18.1-68-45.6-87.1c6-33-3.8-68.3-29.4-93.9s-60.9-35.3-93.9-29.4C324 18.1 292.1 0 256 0zM363.3 203.3c6.2-6.2 6.2-16.4 0-22.6s-16.4-6.2-22.6 0L224 297.4l-52.7-52.7c-6.2-6.2-16.4-6.2-22.6 0s-6.2 16.4 0 22.6l64 64c6.2 6.2 16.4 6.2 22.6 0l128-128z">
+                    </path>
+                  </svg>
+                </span>
+              </div>
+              <div class="profile-username">@melissamelmaia</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="profile-bio">
+          <div class="bio-container">
+            <p class="bio-text" id="bioText">
+              Meu lado mais exclusivo você encontra por aqui. ✨<br>
+              Novos conteúdos e momentos especiais toda semana.
+            </p>
+            <button class="bio-toggle" id="bioToggle">Mostrar mais</button>
+          </div>
+
+          <!-- Início: bloco de ícones de redes sociais (removido temporariamente)
+          <div class="social-links">
+            <div class="social-link twitter">
+              <i class="fas fa-hashtag"></i>
+            </div>
+            <div class="social-link tiktok">
+              <i class="fas fa-music"></i>
+            </div>
+            <div class="social-link instagram">
+              <i class="fas fa-camera"></i>
+            </div>
+            <div class="social-link telegram">
+              <i class="fas fa-paper-plane"></i>
+            </div>
+          </div>
+          Fim: bloco de ícones de redes sociais -->
+
+          <!-- Popup -->
+          <div class="popup-overlay" id="popupOverlay">
+            <div class="popup-container">
+              <button class="close-button" id="closePopup" title="Fechar popup" aria-label="Fechar popup">
+                <span class="sr-only">Fechar</span>
+                <i class="fas fa-times"></i>
+              </button>
+
+              <div class="popup-cover-section">
+                <div class="popup-cover-image">
+                  <img src="images/cover.jpg" alt="Imagem de capa">
+                </div>
+
+                <div class="popup-profile-info">
+                  <div class="popup-profile-image">
+                    <img src="images/avatar.jpg" alt="Foto de perfil">
+                  </div>
+                  <div class="popup-profile-text">
+                    <div class="popup-profile-name">
+                      Mel Maia
+                      <span class="popup-verified">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="18" height="18" aria-label="Verificado">
+                          <path fill="#ff6b3d" d="M190.6 71.4C203 47.9 227.7 32 256 32s53 15.9 65.4 39.4c3.6 6.8 11.5 10.1 18.8 7.8c25.4-7.8 54.1-1.6 74.1 18.4s26.2 48.7 18.4 74.1c-2.3 7.3 1 15.2 7.8 18.8C464.1 203 480 227.7 480 256s-15.9 53-39.4 65.4c-6.8 3.6-10.1 11.5-7.8 18.8c7.8 25.4 1.6 54.1-18.4 74.1s-48.7 26.2-74.1 18.4c-7.3-2.3-15.2 1-18.8 7.8C309 464.1 284.3 480 256 480s-53-15.9-65.4-39.4c-3.6-6.8-11.5-10.1-18.8-7.8c-25.4 7.8-54.1 1.6-74.1-18.4s-26.2-48.7-18.4 74.1c-2.3-7.3-1-15.2 7.8-18.8C47.9 309 32 284.3 32 256s15.9-53 39.4-65.4c6.8-3.6 10.1-11.5 7.8-18.8c-7.8-25.4-1.6-54.1 18.4-74.1s48.7-26.2 74.1-18.4c7.3 2.3 15.2-1 18.8-7.8zM256 0c-36.1 0-68 18.1-87.1 45.6c-33-6-68.3 3.8-93.9 29.4s-35.3 60.9-29.4 93.9C18.1 188 0 219.9 0 256s18.1 68 45.6 87.1c-6 33 3.8 68.3 29.4 93.9s60.9 35.3 93.9 29.4C188 493.9 219.9 512 256 512s68-18.1 87.1-45.6c33 6 68.3-3.8 93.9-29.4s35.3-60.9 29.4-93.9C493.9 324 512 292.1 512 256s-18.1-68-45.6-87.1c6-33-3.8-68.3-29.4-93.9s-60.9-35.3-93.9-29.4C324 18.1 292.1 0 256 0zM363.3 203.3c6.2-6.2 6.2-16.4 0-22.6s-16.4-6.2-22.6 0L224 297.4l-52.7-52.7c-6.2-6.2-16.4-6.2-22.6 0s-6.2 16.4 0 22.6l64 64c6.2 6.2 16.4 6.2 22.6 0l128-128z">
+                          </path>
+                        </svg>
+                      </span>
+                    </div>
+                    <div class="popup-profile-username">@melissamelmaia</div>
+                  </div>
+                </div>
+
+                <div class="popup-stats">
+                  <span><i class="far fa-image"></i> 354</span>
+                  <span><i class="fas fa-video"></i> 148</span>
+                  <span><i class="far fa-heart"></i> 20.2K</span>
+                </div>
+              </div>
+              <!-- Popup Content -->
+              <div class="popup-content">
+                <div class="popup-headline">
+                  <h2>ASSINE AGORA E OBTENHA ESTES BENEFÍCIOS</h2>
+                </div>
+
+                <div class="popup-verification-items">
+                  <div class="verification-item">
+                    <span class="check-icon">
+                      <i class="fas fa-check"></i>
+                    </span>
+                    <span> Acesso a todos conteúdos exclusivos </span>
+                  </div>
+                  <div class="verification-item">
+                    <span class="check-icon">
+                      <i class="fas fa-check"></i>
+                    </span>
+                    <span>Chat ao vivo com a Mel Maia</span>
+                  </div>
+                  <div class="verification-item">
+                    <span class="check-icon">
+                      <i class="fas fa-check"></i>
+                    </span>
+                    <span>Video chamada com a Mel Maia</span>
+                  </div>
+                  <div class="verification-item">
+                    <span class="check-icon">
+                      <i class="fas fa-check"></i>
+                    </span>
+                    <span>E muito mais...</span>
+                  </div>
+                  <div class="popup-additional-headline">
+                    <h3>
+                      Presente surpresa para os +50 primeiros assinantes!
+                    </h3>
+                  </div>
+                  <button class="subscription-button-popup" onclick="openWiinPayCheckout('30dias')">
+                    <span>Assine agora</span>
+                    <span><span class="old-price"></span>por R$ 14,90</span>
+                  </button>
+
+                  <div class="payment-trust">
+                    <div class="trust-item">
+                      <i class="fas fa-lock"></i>
+                      <span>Pagamento 100% Seguro</span>
+                    </div>
+                    <div class="trust-item">
+                      <i class="fas fa-shield-alt"></i>
+                      <span>Dados Protegidos</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Novo painel de Assinaturas -->
+          <div class="pricing-panel">
+            <h3>Assinaturas</h3>
+            <div class="tag-popular">VEJA TUDO AGORA 🔥🔥</div>
+            <span class="mini-badge promo header-promo">Promocional</span>
+
+            <button class="plan-primary" role="button" aria-label="Assinar 30 dias por R$ 14,90" onclick="openWiinPayCheckout('30dias')">
+              <span class="plan-title">30 Dias</span>
+              <span class="plan-price">R$ 14,90</span>
+            </button>
+            <div class="perk-chip" aria-hidden="false" role="note">+ CHAMADA DE VÍDEO COMIGO HOJE!</div>
+
+            <div class="trust-inline">
+              <span><i class="fas fa-lock"></i> Pagamento 100% seguro</span>
+              <span>•</span>
+              <span><i class="fas fa-bolt"></i> Acesso imediato</span>
+            </div>
+
+            <div class="promotions">
+              <div class="promotions-header" role="button" aria-expanded="true">
+                <h4>Promoções</h4>
+                <span class="chevron">⌄</span>
+              </div>
+
+              <button class="plan-outline subscription-link featured" role="button" onclick="openWiinPayCheckout('3meses')">
+                <span class="left"><span class="plan-label">3 Meses</span> <span class="mini-badge best">Mais popular 🔥</span></span>
+                <span class="right">R$ 19,90</span>
+              </button>
+              
+
+              <button class="plan-outline subscription-link" role="button" onclick="openWiinPayCheckout('1ano')">
+                <span class="left"><span class="plan-label">1 Ano</span> <span class="mini-badge best">Melhor oferta</span></span>
+                <span class="right">R$ 24,90</span>
+              </button>
+
+              <!-- Plano PREMIUM: substituiu o Vitalício. Os benefícios ficam
+                   recolhidos atrás da setinha pra não estourar a tela no celular. -->
+              <div class="plan-premium">
+                <span class="plan-premium-badge">★ Mais completo</span>
+                <button class="plan-premium-buy" role="button" onclick="openWiinPayCheckout('supercombo')">
+                  <span class="plan-premium-title">🔥 Super Combo Exclusivo</span>
+                  <span class="plan-premium-sub">Tudo o que tenho a oferecer em um único pacote</span>
+                  <span class="plan-premium-row">
+                    <span class="plan-premium-price">R$ 35,90</span>
+                    <span class="plan-premium-cta">Quero este <i class="fas fa-arrow-right"></i></span>
+                  </span>
+                </button>
+                <button class="plan-premium-toggle" type="button" id="premiumToggle" aria-expanded="false" aria-controls="premiumBenefits">
+                  Benefícios desse plano PREMIUM <span class="chev">⌄</span>
+                </button>
+                <ul class="combo-items plan-premium-list" id="premiumBenefits" hidden>
+                  <li>Acesso Vitalício ao meu Privacy</li>
+                  <li>Entrada no meu Grupo VIP no Telegram</li>
+                  <li>Uma live exclusiva comigo</li>
+                  <li>Meu WhatsApp</li>
+                  <li>Pedidos de vídeo exclusivos personalizados por mim</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+
+
+          <div class="content-toggle">
+            <button class="toggle-btn disabled" data-type="posts" disabled="">
+              <span class="count">502</span> Posts
+            </button>
+            <span class="separator">•</span>
+            <button class="toggle-btn active" data-type="videos">
+              <span class="count">148</span> Videos
+            </button>
+            <span class="separator">•</span>
+            <button class="toggle-btn" data-type="photos">
+              <span class="count">354</span> Fotos
+            </button>
+          </div>
+
+          <!-- Galeria estilo feed (2x2) -->
+          <section class="feed-gallery" aria-label="Prévia de conteúdos">
+            <div class="feed-grid">
+              <!-- Card 1 - Vitrine 3 -->
+              <article class="feed-card">
+                <header class="feed-header">
+                  <img class="feed-avatar" src="images/avatar.jpg" alt="Avatar da Mel Maia" loading="lazy" decoding="async">
+                  <div class="feed-head-text">
+                    <div class="feed-name">Mel Maia</div>
+                    <div class="feed-handle">@melissamelmaia</div>
+                  </div>
+                </header>
+                <div class="feed-media">
+                  <video class="locked-media" data-mm-video="1" src="media/video1.mp4" muted="" playsinline="true" webkit-playsinline="true" autoplay="" loop="" preload="none" poster="images/cover.jpg"></video>
+                  <div class="lock-bubble"><i class="fas fa-lock"></i></div>
+                  <div class="stats-pill">
+                    <span><i class="far fa-heart"></i> 55.3K</span>
+                    <span><i class="far fa-comment"></i> 8.4K</span>
+                  </div>
+                <div class="video-play-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.7); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; cursor: pointer; z-index: 10; transition: 0.3s;"><i class="fas fa-play"></i></div></div>
+                <footer class="feed-footer">
+                  <i class="far fa-heart"></i>
+                  <i class="far fa-comment"></i>
+                  <i class="far fa-bookmark"></i>
+                </footer>
+              </article>
+
+              <!-- Card 2 - Vitrine 1 -->
+              <article class="feed-card">
+                <header class="feed-header">
+                  <img class="feed-avatar" src="images/avatar.jpg" alt="Avatar da Mel Maia" loading="lazy" decoding="async">
+                  <div class="feed-head-text">
+                    <div class="feed-name">Mel Maia</div>
+                    <div class="feed-handle">@melissamelmaia</div>
+                  </div>
+                </header>
+                <div class="feed-media">
+                  <video class="locked-media" data-mm-video="2" src="media/video2.mp4" muted="" playsinline="true" webkit-playsinline="true" autoplay="" loop="" preload="none" poster="images/cover.jpg" style="filter:none !important;-webkit-filter:none !important;transform:none !important;"></video>
+                  <div class="lock-bubble"><i class="fas fa-lock"></i></div>
+                  <div class="stats-pill">
+                    <span><i class="far fa-heart"></i> 67.4K</span>
+                    <span><i class="far fa-comment"></i> 1.9K</span>
+                  </div>
+                <div class="video-play-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.7); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; cursor: pointer; z-index: 10; transition: 0.3s;"><i class="fas fa-play"></i></div></div>
+                <footer class="feed-footer">
+                  <i class="far fa-heart"></i>
+                  <i class="far fa-comment"></i>
+                  <i class="far fa-bookmark"></i>
+                </footer>
+              </article>
+
+              <!-- Card 3 - Vitrine 2 -->
+              <article class="feed-card">
+                <header class="feed-header">
+                  <img class="feed-avatar" src="images/avatar.jpg" alt="Avatar da Mel Maia" loading="lazy" decoding="async">
+                  <div class="feed-head-text">
+                    <div class="feed-name">Mel Maia</div>
+                    <div class="feed-handle">@melissamelmaia</div>
+                  </div>
+                </header>
+                <div class="feed-media">
+                  <video class="locked-media" data-mm-video="3" src="media/video3.mp4" muted="" playsinline="true" webkit-playsinline="true" autoplay="" loop="" preload="none" poster="images/cover.jpg"></video>
+                  <div class="lock-bubble"><i class="fas fa-lock"></i></div>
+                  <div class="stats-pill">
+                    <span><i class="far fa-heart"></i> 89.6K</span>
+                    <span><i class="far fa-comment"></i> 7.1K</span>
+                  </div>
+                </div>
+                <footer class="feed-footer">
+                  <i class="far fa-heart"></i>
+                  <i class="far fa-comment"></i>
+                  <i class="far fa-bookmark"></i>
+                </footer>
+              </article>
+            </div>
+          </section>
+
+          <!-- Super Combo movido pra lista de promoções, como plano PREMIUM -->
+
+          <!-- Depoimentos -->
+          <section class="testimonials-section">
+            <h3>📢 O que estão dizendo...</h3>
+            <div class="testimonials-track">
+              <div class="testimonial-card">
+                <img class="testimonial-avatar" src="images/h1.jpg" alt="João Henrique">
+                <div class="t-name">João Henrique, 32 anos</div>
+                <div class="t-text">"Não acreditava que seria tão bom por esse preço. O acesso foi instantâneo. Recomendo!"</div>
+              </div>
+              <div class="testimonial-card">
+                <img class="testimonial-avatar" src="images/h2.jpg" alt="Carlos Silva">
+                <div class="t-name">Carlos Silva, 45 anos</div>
+                <div class="t-text">"Conteúdo sem censura, bem melhor que esses sites por aí. E ainda recebo no zap? Tô dentro!"</div>
+              </div>
+              <div class="testimonial-card">
+                <img class="testimonial-avatar" src="images/h3.jpg" alt="Reginaldo">
+                <div class="t-name">Reginaldo, 48 anos</div>
+                <div class="t-text">"Discreto demais! Impossível desconfiar. Valeu cada centavo 👌"</div>
+              </div>
+              <div class="testimonial-card">
+                <img class="testimonial-avatar" src="images/h4.jpg" alt="Marcelo Tavares">
+                <div class="t-name">Marcelo Tavares, 31 anos</div>
+                <div class="t-text">"Estou no grupo VIP, recebo vídeo todo dia de manhã... é tipo meu bom dia personalizado 🔥"</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- FAQ -->
+          <div class="info-container">
+            <div class="garantia-faq-wrapper">
+              <!-- Container do FAQ -->
+              <div class="faq-container">
+          <h2 class="faq-titulo">Perguntas Frequentes</h2>
+          <div class="faq-list">
+            <div class="faq-item">
+              <button class="faq-question">
+                <span class="faq-icon"></span>
+                É sigiloso? Vai aparecer na fatura?
+              </button>
+              <div class="faq-answer">
+                Sim, é sigiloso. Cobrança discreta, sem nomes chamativos. Seus dados ficam criptografados.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-question">
+                <span class="faq-icon"></span>
+                Quando tenho acesso depois do pagamento?
+              </button>
+              <div class="faq-answer">
+                Imediato. Pagamento aprovado = liberação em até 10s e e-mail contendo o login de acesso.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-question">
+                <span class="faq-icon"></span>
+                Posso cancelar quando quiser? A assinatura renova?
+              </button>
+              <div class="faq-answer">
+                Sim. Você pode cancelar a renovação automática pela área do assinante a qualquer momento.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-question">
+                <span class="faq-icon"></span>
+                Tem reembolso?
+              </button>
+              <div class="faq-answer">
+                Sim. Reembolso de 7 dias sem burocracia. Se não curtir, devolvemos 100%.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-question">
+                <span class="faq-icon"></span>
+                Como funciona a "chamada de vídeo"?
+              </button>
+              <div class="faq-answer">
+                Basta mandar uma mensagem no chat do produtor e combinar.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-question">
+                <span class="faq-icon"></span>
+                Posso pedir conteúdo personalizado?
+              </button>
+              <div class="faq-answer">
+                Sim! Solicitações podem ser feitas no chat do produtor, com o conteúdo desejado.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <p class="footer-legal-links">
+      <a href="privacidade.html" target="_blank">Termos de Uso</a>
+      <span class="separator">•</span>
+      <a href="privacidade.html" target="_blank">Política de Privacidade</a>
+    </p>
+    </main>
+    <!-- Funções de redirecionamento removidas - checkout via WiinPay PIX -->
+
+        <!-- Cadeado → scroll para planos -->
+        <script>
+      document.querySelectorAll(".lock-bubble").forEach(function(el) {
+        el.addEventListener("click", function() {
+          var planos = document.querySelector(".pricing-panel");
+          if (planos) planos.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+    </script>
+
+        <!-- Script FAQ -->
+        <script type="module">
+      document.querySelectorAll(".faq-question").forEach((button) => {
+        button.addEventListener("click", () => {
+          const faqItem = button.parentElement;
+          faqItem.classList.toggle("active");
+        });
+      });
+    </script>
+
+        <script src="js/main.js?v=20260901bio" defer="" type="module"></script>
+        <script src="js/button.js" defer="" type="module"></script>
+        <script src="js/popup.js" defer="" type="text/javascript"></script>
+
+
+
+        <!-- Notificações Popup -->
+    <div id="notification-container"></div>
+
+      <script type="text/javascript">
+      // Sistema de Notificações (menos intrusivo)
+      const names = [
+        "Alessandro Silva", "Carlos Eduardo", "João Pedro", "Rafael Santos",
+        "Bruno Costa", "Felipe Oliveira", "Gustavo Lima", "Lucas Almeida",
+        "Thiago Ferreira", "Diego Rocha", "Marcelo Souza", "André Pereira",
+        "Roberto Martins", "Fernando Gomes", "Paulo Henrique", "Mateus Silva",
+        "Gabriel Santos", "Leonardo Costa", "Ricardo Barbosa", "Julio César",
+        "Rodrigo Alves", "Vinicius Lima", "Fabio Nascimento", "Eduardo Santos"
+      ];
+
+      // Planos exibidos nas notificações
+      const eligiblePlans = ["1 Ano", "Super Combo"];
+
+      // Controle de mute (persistente por localStorage)
+      let notifMuted = false;
+      try { notifMuted = localStorage.getItem('notifMuted') === '1'; } catch (e) {}
+
+      // Cria e mostra uma notificação
+      function createNotification(name, plan, timeAgo) {
+        const container = document.getElementById('notification-container');
+        if (!container) return;
+        if (notifMuted) return;
+        // Exibe no máximo uma por vez
+        if (container.children.length > 0) return;
+
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          background: #fff7f3; /* creme alaranjado do site */
+          color: #7c2d12;      /* texto marrom/alaranjado usado nos chips */
+          padding: 10px 12px;
+          border-radius: 10px;
+          margin-top: 8px;
+          box-shadow: 0 10px 24px rgba(255, 107, 61, 0.12);
+          font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+          font-size: 13px;
+          line-height: 1.35;
+          transform: translateX(340px);
+          transition: transform 0.28s ease;
+          border: 1px solid #f5b490; /* mesmo tom das bordas de planos */
+          min-width: 260px;
+          max-width: 320px;
+          position: relative;
+          cursor: pointer;
+        `;
+
+        notification.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 8px; height: 8px; background: #ff6b3d; border-radius: 999px;"></div>
+            <div>
+              <strong>${name}</strong> assinou <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#fff1e6;color:#b45309;font-weight:700;">${plan}</span>
+              <div style="font-size: 11px; opacity: 0.8; margin-top: 2px; color:#6b7280">${timeAgo}</div>
+            </div>
+          </div>
+          <button aria-label="Silenciar notificações" title="Silenciar notificações" style="position:absolute;top:6px;right:8px;background:transparent;border:none;color:#b45309;font-size:16px;line-height:1;cursor:pointer">×</button>
+        `;
+
+        container.appendChild(notification);
+
+        // Clique no X silencia todas as próximas e remove atual
+        const closeBtn = notification.querySelector('button');
+        if (closeBtn) {
+          closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            notifMuted = true;
+            try { localStorage.setItem('notifMuted', '1'); } catch (err) {}
+            notification.style.transform = 'translateX(340px)';
+            setTimeout(() => {
+              if (notification.parentNode) notification.parentNode.removeChild(notification);
+            }, 280);
+          });
+        }
+
+        // Clique no toast abre o checkout
+        notification.addEventListener('click', () => {
+          notification.style.transform = 'translateX(340px)';
+          setTimeout(() => {
+            if (notification.parentNode) notification.parentNode.removeChild(notification);
+          }, 280);
+          if (typeof openWiinPayCheckout === 'function') openWiinPayCheckout('supercombo');
+        });
+
+        // Animar entrada
+        requestAnimationFrame(() => {
+          notification.style.transform = 'translateX(0)';
+        });
+
+        // Remover após 3.5s
+        setTimeout(() => {
+          notification.style.transform = 'translateX(340px)';
+          setTimeout(() => {
+            if (notification.parentNode) notification.parentNode.removeChild(notification);
+          }, 300);
+        }, 3500);
+      }
+
+      function getRandomTimeAgo() {
+        const times = [
+          "há 2 minutos", "há 5 minutos", "há 8 minutos", "há 1 minuto",
+          "há 3 minutos", "há 7 minutos", "há 4 minutos", "há 6 minutos",
+          "há 10 minutos", "há 15 minutos", "agora mesmo"
+        ];
+        return times[Math.floor(Math.random() * times.length)];
+      }
+
+      function showRandomNotification() {
+        const name = names[Math.floor(Math.random() * names.length)];
+        const plan = eligiblePlans[Math.floor(Math.random() * eligiblePlans.length)];
+        const timeAgo = getRandomTimeAgo();
+        createNotification(name, plan, timeAgo);
+      }
+
+      // Iniciar notificações com menos frequência
+      function startNotifications() {
+        if (notifMuted) return;
+        let shownCount = 0;
+        const maxPerSession = 6;
+
+        const scheduleNext = () => {
+          if (notifMuted || shownCount >= maxPerSession) return; // limite de sessões
+          const interval = 18000 + Math.floor(Math.random() * 10000); // 18–28s
+          setTimeout(() => {
+            // evitar empilhar se já houver uma visível
+            const container = document.getElementById('notification-container');
+            if (!notifMuted && container && container.children.length === 0) {
+              showRandomNotification();
+              shownCount++;
+            }
+            scheduleNext();
+          }, interval);
+        };
+
+        // Primeira após 5–8s
+        const firstDelay = 5000 + Math.floor(Math.random() * 3000);
+        setTimeout(() => {
+          const container = document.getElementById('notification-container');
+          if (!notifMuted && container && container.children.length === 0) {
+            showRandomNotification();
+            shownCount++;
+          }
+          scheduleNext();
+        }, firstDelay);
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        // Iniciar sistema de notificações
+        startNotifications();
+        // Melhorias para reprodução de vídeo no iOS
+        const video = document.querySelector(".post-video");
+
+        if (video) {
+          // Função para tentar iniciar o vídeo de várias maneiras
+          const tryPlayVideo = () => {
+            // Tenta reproduzir o vídeo
+            const playPromise = video.play();
+
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  console.log("Vídeo iniciado com sucesso");
+                })
+                .catch((error) => {
+                  console.log("Erro ao iniciar vídeo:", error);
+
+                  // Se falhar, tenta novamente após um pequeno atraso
+                  setTimeout(() => {
+                    video
+                      .play()
+                      .catch((e) =>
+                        console.log("Tentativa adicional falhou:", e)
+                      );
+                  }, 300);
+                });
+            }
+          };
+
+          // Tenta iniciar o vídeo imediatamente
+          tryPlayVideo();
+
+          // Tenta novamente quando a página estiver totalmente carregada
+          window.addEventListener("load", tryPlayVideo);
+
+          // Tenta novamente com interação do usuário
+          document.body.addEventListener(
+            "touchstart",
+            () => {
+              video
+                .play()
+                .catch((e) => console.log("Falha ao iniciar com toque:", e));
+            },
+            { once: true }
+          );
+
+          // Verifica se o vídeo está pausado e tenta reproduzir novamente
+          setInterval(() => {
+            if (video.paused) {
+              video
+                .play()
+                .catch((e) =>
+                  console.log("Falha ao reiniciar vídeo pausado:", e)
+                );
+            }
+          }, 1000);
+        }
+
+        // Benefícios do plano PREMIUM: recolhidos por padrão pra economizar
+        // altura no celular; abrem quando o lead toca na setinha.
+        const premiumToggle = document.getElementById("premiumToggle");
+        const premiumBenefits = document.getElementById("premiumBenefits");
+        if (premiumToggle && premiumBenefits) {
+          premiumToggle.addEventListener("click", () => {
+            const open = premiumToggle.getAttribute("aria-expanded") === "true";
+            premiumToggle.setAttribute("aria-expanded", String(!open));
+            premiumBenefits.hidden = open;
+          });
+        }
+
+        // Promotions dropdown toggle
+        const promotionsHeader = document.querySelector(".promotions-header");
+        // O card do plano PREMIUM entra aqui como bloco inteiro: se só o botão
+        // de compra fosse escondido, sobrava o card preto vazio com a setinha.
+        const promotionsButtons = document.querySelectorAll(
+          ".promotions .subscription-link, .promotions .plan-premium"
+        );
+        const chevron = document.querySelector(".chevron");
+        let promotionsOpen = true;
+
+        // Append current query string (UTMs) to pricing links
+        const planLinks = document.querySelectorAll(
+          ".pricing-panel a[href^='https://'], .footer-cta a[href^='https://']"
+        );
+        if (window.location.search) {
+          planLinks.forEach((a) => {
+            try {
+              const url = new URL(a.html);
+              if (url.search && url.search.length > 1) {
+                // Already has params; append
+                a.href = a.href + "&" + window.location.search.substring(1);
+              } else {
+                a.href = a.href + window.location.search;
+              }
+            } catch (e) {}
+          });
+        }
+
+        promotionsHeader.addEventListener("click", () => {
+          promotionsOpen = !promotionsOpen;
+
+          if (promotionsOpen) {
+            promotionsButtons.forEach((button) => {
+              // "" devolve o display do CSS. Com "block" fixo, os planos
+              // perdiam o flex e o preço saía de baixo do nome ao reabrir.
+              button.style.display = "";
+            });
+            chevron.style.transform = "rotate(0deg)";
+          } else {
+            promotionsButtons.forEach((button) => {
+              button.style.display = "none";
+            });
+            chevron.style.transform = "rotate(-90deg)";
+          }
+        });
+
+        // Content tabs
+        const tabs = document.querySelectorAll(".tab");
+        const tabContents = document.querySelectorAll(".tab-content");
+
+        tabs.forEach((tab) => {
+          tab.addEventListener("", () => {
+            // Remove active class from all tabs and contents
+            tabs.forEach((t) => t.classList.remove("active"));
+            tabContents.forEach((content) =>
+              content.classList.remove("active")
+            );
+
+            // Add active class to clicked tab
+            tab.classList.add("active");
+
+            // Show corresponding content
+            const tabId = tab.getAttribute("data-tab");
+            document.getElementById(`${tabId}-content`).classList.add("active");
+          });
+        });
+
+        // Media subtabs
+        const subtabs = document.querySelectorAll(".subtab");
+
+        subtabs.forEach((subtab) => {
+          subtab.addEventListener("click", () => {
+            // Remove active class from all subtabs
+            subtabs.forEach((s) => s.classList.remove("active"));
+
+            // Add active class to clicked subtab
+            subtab.classList.add("active");
+          });
+        });
+
+        // Cookie consent
+        const cookieConsent = document.querySelector(".cookie-consent");
+        if (cookieConsent) {
+        const acceptButton = cookieConsent.querySelector("button");
+
+        // Check if user has already accepted cookies
+        if (localStorage.getItem("cookiesAccepted")) {
+          cookieConsent.style.display = "none";
+        }
+
+        if (acceptButton) acceptButton.addEventListener("click", () => {
+          localStorage.setItem("cookiesAccepted", "true");
+          cookieConsent.style.display = "none";
+        });
+        }
+
+        // Adicionar efeito de pulsar aos botões quando passar o mouse
+        const outlineButtons = document.querySelectorAll(".outline-button");
+
+        outlineButtons.forEach((button) => {
+          button.addEventListener("mouseenter", () => {
+            button.classList.add("pulse");
+          });
+
+          button.addEventListener("mouseleave", () => {
+            button.classList.remove("pulse");
+          });
+        });
+
+        // Otimização: autoplay apenas quando visível; pausa quando fora da viewport
+        try {
+          const feedVideos = Array.from(document.querySelectorAll('.feed-media video.locked-media'));
+          if (feedVideos.length) {
+            const io = new IntersectionObserver((entries) => {
+              entries.forEach(entry => {
+                const vid = entry.target;
+                if (entry.isIntersecting && entry.intersectionRatio >= 0.3) {
+                  if (vid.paused) vid.play().catch(() => {});
+                } else {
+                  if (!vid.paused) vid.pause();
+                }
+              });
+            }, { threshold: [0, 0.3] });
+            feedVideos.forEach(v => io.observe(v));
+
+            // Pausa todos ao trocar de aba para reduzir CPU
+            document.addEventListener('visibilitychange', () => {
+              if (document.hidden) feedVideos.forEach(v => { try { v.pause(); } catch(e) {} });
+            });
+          }
+        } catch(e) {}
+      });
+    </script>
+    
+  
+
+  
+
+
+
+
+<script src="js/wiinpay-checkout.js?v=20260901premium"></script>
+
+<script>
+// Audio automático na vitrine: unmute o vídeo mais visível na tela
+(function(){
+  var videos = document.querySelectorAll('.feed-media video.locked-media');
+  if (!videos.length) return;
+
+  var current = null;
+
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        if (current && current !== entry.target) {
+          current.muted = true;
+        }
+        entry.target.muted = false;
+        current = entry.target;
+      } else if (entry.target === current && entry.intersectionRatio < 0.4) {
+        entry.target.muted = true;
+        current = null;
+      }
+    });
+  }, { threshold: [0, 0.4, 0.6, 1] });
+
+  videos.forEach(function(v) { observer.observe(v); });
+})();
+</script>
+</body></html>

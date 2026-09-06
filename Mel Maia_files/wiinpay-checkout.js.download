@@ -1,0 +1,1095 @@
+/* ============================================================
+   WiinPay Checkout – Funil completo (Front + Taxa 1 + Taxa 2)
+   ============================================================ */
+(function () {
+  'use strict';
+
+  // ── Config ────────────────────────────────────────────────
+  const PLANS = {
+    '30dias':    { label: '30 Dias',      value: 14.90,  combo: false },
+    '3meses':    { label: '3 Meses',      value: 19.90,  combo: false },
+    '1ano':      { label: '1 Ano',        value: 24.90,  combo: false },
+    'vitalicio': { label: 'Vitalício',    value: 29.90,  combo: false },
+    // combo:false = passa pelas 3 tarifas como qualquer outro plano. Com true,
+    // o pagamento do plano ia direto pra tela de sucesso.
+    // (hideFrontBump: true esconderia o order bump da 1a etapa neste plano;
+    //  a checagem continua em openModal, hoje nenhum plano usa.)
+    'supercombo':{ label: 'Super Combo',  value: 35.90,  combo: false },
+  };
+
+  const TAXA1 = { label: 'Tarifa de Segurança do Dispositivo', value: 6.50 };
+  const TAXA2 = { label: 'Taxa de Liberação de Uso', value: 12.53 };
+  const TAXA3 = { label: 'Confirmação Final', value: 18.92 };
+  const BUMP1 = { value: 7.00, label: 'Chamada de Vídeo Privada', desc: 'Sessão exclusiva de 10 min ao vivo, só nós dois', icon: 'fas fa-video', color: '#25d366' };
+  const BUMP2 = { value: 7.00, label: 'Meu WhatsApp Pessoal', desc: 'Converse comigo diretamente no WhatsApp', icon: 'fas fa-comment-dots', color: '#25d366' };
+  const BUMP3 = { value: 14.00, label: 'Minha Calcinha Usada', desc: 'Enviada na hora, discreta e bem molhadinha', icon: 'fas fa-gift', color: '#ff6b9d' };
+  const ORDER_BUMP_VALUE = BUMP1.value;
+  const ORDER_BUMP_LABEL = BUMP1.label;
+
+  const REDIRECT_URL   = 'https://t.me/+OXf0Ox1ovY0zMzM5';   // grupo/canal VIP
+  const POLL_INTERVAL  = 5000;
+  const TIMER_DURATION = 299; // 4:59
+  const TEST_MODE      = new URLSearchParams(window.location.search).get('test') === '1';
+
+  // ── State ─────────────────────────────────────────────────
+  let currentPlan    = null;
+  let pollTimer      = null;
+  let timerInterval  = null;
+  let paymentId      = null;
+  let userData       = { name: '', email: '' };
+  let funnelStage    = 'front';
+  let currentPayValue = 0;
+  let currentPurchaseEventId = null; // dedup: mesmo id no Purchase do navegador e do servidor (via KV -> webhook)
+
+  // ── Helpers ───────────────────────────────────────────────
+  function genEventId() {
+    return 'ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+  }
+
+  function getCookie(name) {
+    const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  // O _fbc e escrito pelo proprio pixel a partir do ?fbclid= da URL. Se o pixel
+  // estiver bloqueado, ou o visitante converter antes do cookie ser gravado, o
+  // fbc some mesmo tendo havido clique no anuncio — e e justamente a atribuicao
+  // do trafego pago que se perde. Aqui reconstruimos no formato documentado
+  // (fb.1.<timestamp_ms>.<fbclid>) e guardamos pro resto do funil.
+  const FBC_STORAGE_KEY = 'wp_fbc_v1';
+
+  function resolveFbc() {
+    const cookie = getCookie('_fbc');
+    if (cookie) return cookie;
+
+    let stored = '';
+    try { stored = sessionStorage.getItem(FBC_STORAGE_KEY) || ''; } catch (e) {}
+    if (stored) return stored;
+
+    let fbclid = '';
+    try { fbclid = new URLSearchParams(window.location.search).get('fbclid') || ''; } catch (e) {}
+    if (!fbclid) return '';
+
+    const built = 'fb.1.' + Date.now() + '.' + fbclid;
+    try { sessionStorage.setItem(FBC_STORAGE_KEY, built); } catch (e) {}
+    return built;
+  }
+
+  function getFbCookies() {
+    return { fbp: getCookie('_fbp') || '', fbc: resolveFbc() };
+  }
+
+  // Correspondencia Avancada: entrega ao pixel o nome e o e-mail que o cliente
+  // acabou de digitar. Sem isso os eventos do navegador saem so com cookie e IP,
+  // e a Meta fica com muito pouco pra casar o comprador com quem viu o anuncio.
+  // O proprio SDK normaliza e aplica SHA-256 antes de enviar — por isso o valor
+  // vai em texto puro aqui e nada sensivel sai em claro do navegador.
+  // Reinicializar o pixel com os dados e a forma documentada de ligar isso
+  // depois do carregamento da pagina; vale pro Lead e pros Purchase seguintes.
+  function setFbAdvancedMatching(name, email) {
+    if (typeof fbq !== 'function') return;
+    const pixelId = window.WP_META_PIXEL_ID;
+    if (!pixelId) return;
+
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    const data = {};
+    if (email) data.em = String(email).trim().toLowerCase();
+    if (parts[0]) data.fn = parts[0].toLowerCase();
+    if (parts.length > 1) data.ln = parts.slice(1).join(' ').toLowerCase();
+    if (!Object.keys(data).length) return;
+
+    try { fbq('init', pixelId, data); } catch (e) {}
+  }
+
+  function firePixel(event, params, eventId) {
+    if (typeof fbq === 'function') {
+      fbq('track', event, params || {}, eventId ? { eventID: eventId } : {});
+    }
+  }
+
+  // ── TikTok Pixel helpers ──────────────────────────────────
+  function fireTikTokEvent(event, props, eventId) {
+    if (typeof ttq !== 'undefined' && ttq.track) {
+      try {
+        ttq.track(event, props || {}, eventId ? { event_id: eventId } : {});
+      } catch(e) {}
+    }
+  }
+  function getTtclid() {
+    try { return sessionStorage.getItem('ttclid') || ''; } catch(e) { return ''; }
+  }
+  fireTikTokEvent('ViewContent', { content_type: 'product_group' });
+
+  // ── Kwai Pixel helper ─────────────────────────────────────
+  // Cada etapa paga do funil chama fireKwai('purchase', ...) → um purchase novo
+  // no Kwai, com o valor daquela etapa (mesmo padrão de Meta/TikTok acima).
+  function fireKwai(event, props) {
+    if (typeof kwaiq !== 'undefined' && kwaiq.track) {
+      try { kwaiq.track(event, props || {}); } catch(e) {}
+    }
+  }
+  fireKwai('contentView', { content_type: 'product_group' });
+
+  // Captura o fbclid ja na abertura da pagina, nao so no checkout: assim o fbc
+  // fica guardado em sessionStorage mesmo que a URL perca o parametro depois.
+  resolveFbc();
+
+  // Debug: mostrar todas as chaves UTMify no localStorage
+  try {
+    var _dbg = {};
+    for (var i = 0; i < localStorage.length; i++) {
+      var _k = localStorage.key(i);
+      if (/^(utm_|src|sck|fbclid|gclid|gbraid|wbraid|ttclid|xcod|click_id|pixel_id|cid|lead|utm_id|keyword|CampaignID|adSETID|CreativeID)/i.test(_k)) {
+        _dbg[_k] = localStorage.getItem(_k);
+      }
+    }
+    console.log('[UTMify Debug] localStorage keys:', JSON.stringify(_dbg, null, 2));
+  } catch(e) {}
+
+  function getUtmParams() {
+    // Ler direto das chaves individuais que o script UTMify salva no localStorage
+    var KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','src','fbclid','gclid','gbraid','wbraid','ttclid'];
+    var utms = {};
+
+    KEYS.forEach(function(key) {
+      try {
+        var v = localStorage.getItem(key);
+        if (v) utms[key] = v;
+      } catch(e) {}
+    });
+
+    // Mapear src ↔ utm_source
+    if (utms.src && !utms.utm_source) utms.utm_source = utms.src;
+    if (utms.utm_source && !utms.src) utms.src = utms.utm_source;
+
+    console.log('[UTMify Debug] getUtmParams():', JSON.stringify(utms));
+    return utms;
+  }
+
+  function formatBRL(v) {
+    return 'R$ ' + v.toFixed(2).replace('.', ',');
+  }
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  // ── CSS ───────────────────────────────────────────────────
+  const style = document.createElement('style');
+  style.textContent = `
+    .wp-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;display:none;align-items:center;justify-content:center;padding:1rem;font-family:'Montserrat',system-ui,sans-serif}
+    .wp-overlay.active{display:flex}
+    .wp-modal{background:#fff;border-radius:16px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;position:relative;animation:wpFadeIn .3s ease}
+    @keyframes wpFadeIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
+    .wp-close{position:absolute;top:12px;right:14px;background:rgba(0,0,0,.08);border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer;display:grid;place-items:center;color:#333;z-index:2}
+    .wp-close:hover{background:rgba(0,0,0,.15)}
+    .wp-header{background:linear-gradient(135deg,#ff6b3d,#ff8f5f);color:#fff;padding:24px 20px 18px;border-radius:16px 16px 0 0;text-align:center}
+    .wp-header.red{background:linear-gradient(135deg,#dc2626,#ef4444)}
+    .wp-header.wpp-green{background:linear-gradient(135deg,#25d366,#4ade80)}
+    .wp-header.pink{background:linear-gradient(135deg,#e91e8c,#ff6bb5)}
+    .wp-header.red-flat{background:linear-gradient(135deg,#dc2626,#ef4444);border-radius:0}
+    .wp-header.green{background:linear-gradient(135deg,#10b981,#34d399)}
+    .wp-header h2{font-size:18px;font-weight:700;margin:0 0 4px}
+    .wp-header p{font-size:14px;opacity:.9;margin:0}
+    .wp-body{padding:20px}
+    .wp-field{margin-bottom:14px}
+    .wp-field label{display:block;font-size:13px;font-weight:600;color:#333;margin-bottom:5px}
+    .wp-field input[type="text"],.wp-field input[type="email"]{width:100%;padding:12px 14px;border:1px solid #ddd;border-radius:10px;font-size:15px;font-family:inherit;outline:none;transition:border .2s}
+    .wp-field input:focus{border-color:#ff6b3d}
+    .wp-btn{width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
+    .wp-btn-primary{background:linear-gradient(135deg,#ff6b3d,#ff8f5f);color:#fff;box-shadow:0 4px 12px rgba(255,107,61,.3)}
+    .wp-btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(255,107,61,.4)}
+    .wp-btn-primary:disabled{opacity:.6;cursor:not-allowed;transform:none}
+    .wp-btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff;box-shadow:0 4px 12px rgba(220,38,38,.3)}
+    .wp-btn-danger:hover{transform:translateY(-1px)}
+    .wp-btn-danger:disabled{opacity:.6;cursor:not-allowed;transform:none}
+    .wp-header.pink-flat{background:linear-gradient(135deg,#e91e8c,#ff6bb5);border-radius:0}
+    .wp-btn-pink{background:linear-gradient(135deg,#e91e8c,#ff6bb5);color:#fff;box-shadow:0 4px 12px rgba(233,30,140,.3)}
+    .wp-btn-pink:hover{transform:translateY(-1px)}
+    .wp-btn-pink:disabled{opacity:.6;cursor:not-allowed;transform:none}
+    .green-zone .wp-header.red-flat{background:linear-gradient(135deg,#25d366,#4ade80);border-radius:0}
+    .green-zone .wp-taxa-price{color:#25d366}
+    .green-zone .wp-taxa-warn{background:#f0fdf4;border-color:#86efac;color:#25d366}
+    .green-zone .wp-bump{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-color:#25d366}
+    .green-zone .wp-bump:hover{background:#dcfce7}
+    .green-zone .wp-bump.checked{background:#dcfce7;border-style:solid}
+    .green-zone .wp-bump-badge{background:#25d366}
+    .green-zone .wp-bump-price{color:#25d366}
+    .green-zone .wp-bump input[type="checkbox"]{accent-color:#25d366}
+    .green-zone .wp-timer span{color:#25d366}
+    .green-zone .wp-btn-danger{background:linear-gradient(135deg,#25d366,#4ade80);box-shadow:0 4px 12px rgba(37,211,102,.3)}
+    .pink-zone .wp-taxa-price{color:#e91e8c}
+    .pink-zone .wp-taxa-warn{background:#fdf2f8;border-color:#f9a8d4;color:#e91e8c}
+    .pink-zone .wp-bump{background:linear-gradient(135deg,#fdf2f8,#fce7f3);border-color:#e91e8c}
+    .pink-zone .wp-bump:hover{background:#fce7f3}
+    .pink-zone .wp-bump.checked{background:#fce7f3;border-style:solid}
+    .pink-zone .wp-bump-badge{background:#e91e8c}
+    .pink-zone .wp-bump-price{color:#e91e8c}
+    .pink-zone .wp-bump input[type="checkbox"]{accent-color:#e91e8c}
+    .pink-zone .wp-timer span{color:#e91e8c}
+    .wp-header.purple{background:linear-gradient(135deg,#7c3aed,#a78bfa)}
+    .wp-header.purple-flat{background:linear-gradient(135deg,#7c3aed,#a78bfa);border-radius:0}
+    .wp-btn-purple{background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;box-shadow:0 4px 12px rgba(124,58,237,.3)}
+    .wp-btn-purple:hover{transform:translateY(-1px)}
+    .wp-btn-purple:disabled{opacity:.6;cursor:not-allowed;transform:none}
+    .purple-zone .wp-taxa-price{color:#7c3aed}
+    .purple-zone .wp-taxa-warn{background:#f5f3ff;border-color:#c4b5fd;color:#7c3aed}
+    .purple-zone .wp-timer span{color:#7c3aed}
+    .wp-btn-success{background:linear-gradient(135deg,#10b981,#34d399);color:#fff;box-shadow:0 4px 12px rgba(16,185,129,.3)}
+    .wp-btn-success:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(16,185,129,.4)}
+    .wp-btn-copy{background:#f3f4f6;color:#333;margin-top:10px;font-size:14px}
+    .wp-btn-copy:hover{background:#e5e7eb}
+    .wp-plan-tag{display:inline-block;background:rgba(255,255,255,.2);padding:4px 12px;border-radius:999px;font-size:13px;font-weight:600;margin-top:6px}
+    .wp-divider{height:1px;background:#eee;margin:16px 0}
+    .wp-error{background:#fef2f2;color:#dc2626;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;display:none}
+    .wp-error.show{display:block}
+    .wp-qr-wrap{display:flex;justify-content:center;align-items:center;padding:10px 0}
+    .wp-qr-wrap img{max-width:220px;width:220px;height:220px;border-radius:8px;border:2px solid #eee;margin:0 auto;display:block}
+    .wp-pix-code{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:12px;font-size:11px;word-break:break-all;color:#374151;margin-top:12px;text-align:center;line-height:1.4;max-height:70px;overflow-y:auto}
+    .wp-status{display:flex;justify-content:center;align-items:center;padding:12px 0;text-align:center}
+    .wp-status .waiting{color:#f59e0b;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px}
+    .wp-spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(245,158,11,.3);border-top-color:#f59e0b;border-radius:50%;animation:wpSpin .6s linear infinite;flex-shrink:0}
+    .wp-spinner-white{border:2px solid rgba(255,255,255,.3);border-top-color:#fff}
+    @keyframes wpSpin{to{transform:rotate(360deg)}}
+    .wp-trust{display:flex;justify-content:center;gap:16px;margin-top:14px;font-size:11px;color:#6b7280}
+    .wp-trust i{color:#10b981;margin-right:4px}
+    .wp-step{display:none}
+    .wp-step.active{display:block}
+    .wp-success-icon{font-size:48px;color:#fff;margin-bottom:10px}
+
+    /* Timer de urgência */
+    .wp-timer{background:#1a1a2e;color:#fff;text-align:center;padding:10px;font-size:13px;font-weight:600;border-radius:16px 16px 0 0}
+    .wp-timer span{color:#ff6b3d;font-weight:800;font-size:15px}
+
+    /* Order Bump */
+    .wp-bump{background:linear-gradient(135deg,#fff8f0,#fff3e8);border:2px dashed #ff6b3d;border-radius:12px;padding:14px;margin:14px 0;cursor:pointer;transition:all .2s;position:relative}
+    .wp-bump:hover{background:#fff0e6}
+    .wp-bump.checked{border-style:solid;background:#fff0e6}
+    .wp-bump-badge{position:absolute;top:-10px;left:14px;background:#ff6b3d;color:#fff;font-size:10px;font-weight:700;padding:2px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:.5px}
+    .wp-bump-inner{display:flex;align-items:center;gap:10px}
+    .wp-bump input[type="checkbox"]{width:20px;height:20px;accent-color:#ff6b3d;pointer-events:none;flex-shrink:0}
+    .wp-bump-text{flex:1}
+    .wp-bump-title{font-size:14px;font-weight:700;color:#333}
+    .wp-bump-price{font-size:13px;color:#ff6b3d;font-weight:600;margin-top:2px}
+    .wp-bump-desc{font-size:11px;color:#6b7280;margin-top:2px}
+    .wp-bump-img{width:50px;height:50px;border-radius:10px;object-fit:cover;flex-shrink:0}
+
+    /* Taxa */
+    .wp-taxa-body{padding:20px}
+    .wp-taxa-text{font-size:13px;color:#555;line-height:1.6;margin-bottom:14px}
+    .wp-taxa-text strong{color:#222}
+    .wp-taxa-list{list-style:none;padding:0;margin:10px 0 16px}
+    .wp-taxa-list li{font-size:13px;color:#374151;padding:5px 0;padding-left:24px;position:relative}
+    .wp-taxa-list li:before{content:"✓";position:absolute;left:0;color:#10b981;font-weight:700;font-size:14px}
+    .wp-taxa-price{text-align:center;font-size:28px;font-weight:800;color:#dc2626;margin:8px 0}
+    .wp-taxa-warn{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;font-size:12px;color:#dc2626;text-align:center;margin:12px 0;font-weight:600}
+    .wp-total{text-align:center;font-size:13px;color:#6b7280;margin-bottom:14px}
+    .wp-total strong{color:#333;font-size:16px}
+  `;
+  document.head.appendChild(style);
+
+  // ── HTML ──────────────────────────────────────────────────
+  const overlay = document.createElement('div');
+  overlay.className = 'wp-overlay';
+  overlay.id = 'wpOverlay';
+  overlay.innerHTML = `
+    <div class="wp-modal">
+      <button class="wp-close" id="wpClose" title="Fechar">&times;</button>
+
+      <!-- STEP: Formulário -->
+      <div class="wp-step active" id="stepForm">
+        <div class="wp-header">
+          <h2>Pagamento via PIX</h2>
+          <p>Preencha seus dados para gerar o PIX</p>
+          <div class="wp-plan-tag" id="wpPlanTag"></div>
+        </div>
+        <div class="wp-body">
+          <div class="wp-error" id="wpError"></div>
+          <div class="wp-field">
+            <label for="wpName">Nome completo</label>
+            <input type="text" id="wpName" placeholder="Seu nome e sobrenome" autocomplete="name">
+          </div>
+          <div class="wp-field">
+            <label for="wpEmail">E-mail</label>
+            <input type="email" id="wpEmail" placeholder="seu@email.com" autocomplete="email">
+          </div>
+          <div class="wp-bump" id="wpBumpFront">
+            <div class="wp-bump-badge">Oferta especial</div>
+            <div class="wp-bump-inner">
+              <input type="checkbox" id="wpBumpCheckFront">
+
+              <div class="wp-bump-text">
+                <div class="wp-bump-title"><i class="${BUMP1.icon}" style="color:${BUMP1.color}"></i> ${BUMP1.label}</div>
+                <div class="wp-bump-price">+ ${formatBRL(BUMP1.value)}</div>
+                <div class="wp-bump-desc">${BUMP1.desc}</div>
+              </div>
+            </div>
+          </div>
+          <div class="wp-total" id="wpTotalFront"></div>
+          <button class="wp-btn wp-btn-primary" id="wpGenerate"><i class="fas fa-qrcode"></i> Gerar PIX</button>
+          <div class="wp-trust">
+            <span><i class="fas fa-lock"></i> Pagamento seguro</span>
+            <span><i class="fas fa-shield-alt"></i> Dados protegidos</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP: QR Code (reutilizado pra todos os pagamentos) -->
+      <div class="wp-step" id="stepQR">
+        <div class="wp-header" id="qrHeader">
+          <h2>Escaneie o QR Code</h2>
+          <p>Ou copie o código PIX abaixo</p>
+          <div class="wp-plan-tag" id="qrTag"></div>
+        </div>
+        <div class="wp-body">
+          <div class="wp-qr-wrap">
+            <img id="wpQrImg" src="" alt="QR Code PIX">
+          </div>
+          <div class="wp-pix-code" id="wpPixCode"></div>
+          <button class="wp-btn wp-btn-copy" id="wpCopy"><i class="fas fa-copy"></i> Copiar código PIX</button>
+          <div class="wp-divider"></div>
+          <div class="wp-status">
+            <span class="waiting" id="wpWaiting"><span class="wp-spinner"></span> Aguardando pagamento...</span>
+          </div>
+          <div class="wp-trust">
+            <span><i class="fas fa-lock"></i> Pagamento seguro</span>
+            <span><i class="fas fa-bolt"></i> Confirmação automática</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP: Taxa 1 — Tarifa de Segurança do Dispositivo -->
+      <div class="wp-step green-zone" id="stepTaxa1">
+        <div class="wp-timer"><i class="fas fa-clock"></i> Tempo restante para liberação: <span id="wpTimer1">04:59</span></div>
+        <div class="wp-header red-flat">
+          <h2><i class="fas fa-shield-alt"></i> Verificação Obrigatória</h2>
+          <p>Tarifa de Segurança do Dispositivo</p>
+        </div>
+        <div class="wp-taxa-body">
+          <div class="wp-taxa-text">
+            Seu pagamento foi <strong>confirmado com sucesso</strong>!
+            <br><br>
+            Para garantir a <strong>segurança e exclusividade</strong> do conteúdo, precisamos verificar seu dispositivo. Essa tarifa impede acessos não autorizados e protege contra vazamentos.
+          </div>
+          <ul class="wp-taxa-list">
+            <li>Vincula seu dispositivo ao acesso VIP</li>
+            <li>Protege contra clonagem e vazamento</li>
+            <li>Verificação instantânea e automática</li>
+          </ul>
+          <div class="wp-taxa-price">${formatBRL(TAXA1.value)}</div>
+          <div class="wp-taxa-warn"><i class="fas fa-exclamation-triangle"></i> Sem esta verificação, seu acesso não será liberado.</div>
+          <div class="wp-bump" id="wpBumpTaxa1">
+            <div class="wp-bump-badge">Oferta especial</div>
+            <div class="wp-bump-inner">
+              <input type="checkbox" id="wpBumpCheckTaxa1">
+
+              <div class="wp-bump-text">
+                <div class="wp-bump-title"><i class="${BUMP2.icon}" style="color:${BUMP2.color}"></i> ${BUMP2.label}</div>
+                <div class="wp-bump-price">+ ${formatBRL(BUMP2.value)}</div>
+                <div class="wp-bump-desc">${BUMP2.desc}</div>
+              </div>
+            </div>
+          </div>
+          <div class="wp-total" id="wpTotalTaxa1"></div>
+          <button class="wp-btn wp-btn-danger" id="wpPayTaxa1"><i class="fas fa-lock"></i> Liberar dispositivo por ${formatBRL(TAXA1.value)}</button>
+          <div class="wp-trust">
+            <span><i class="fas fa-lock"></i> Pagamento seguro</span>
+            <span><i class="fas fa-shield-alt"></i> Dados protegidos</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP: Taxa 2 — Taxa de Liberação de Uso -->
+      <div class="wp-step pink-zone" id="stepTaxa2">
+        <div class="wp-timer"><i class="fas fa-clock"></i> Tempo restante: <span id="wpTimer2">04:59</span></div>
+        <div class="wp-header pink-flat">
+          <h2><i class="fas fa-download"></i> Seu acesso está prestes a ser liberado!</h2>
+          <p>Taxa de Liberação de Uso</p>
+        </div>
+        <div class="wp-taxa-body">
+          <div class="wp-taxa-text">
+            Dispositivo <strong>verificado com sucesso</strong>!
+            <br><br>
+            A Taxa de Liberação de Uso garante seu direito de acessar e baixar todo o conteúdo exclusivo do canal VIP.
+          </div>
+          <ul class="wp-taxa-list">
+            <li>Liberação completa de downloads</li>
+            <li>Acesso sem restrições ao conteúdo</li>
+            <li>Direito de uso pessoal das mídias</li>
+          </ul>
+          <div class="wp-taxa-price">${formatBRL(TAXA2.value)}</div>
+          <div class="wp-taxa-warn"><i class="fas fa-exclamation-triangle"></i> Sem esta liberação, o conteúdo do canal continua bloqueado.</div>
+          <div class="wp-bump" id="wpBumpTaxa2">
+            <div class="wp-bump-badge">Oferta especial</div>
+            <div class="wp-bump-inner">
+              <input type="checkbox" id="wpBumpCheckTaxa2">
+
+              <div class="wp-bump-text">
+                <div class="wp-bump-title"><i class="${BUMP3.icon}" style="color:${BUMP3.color}"></i> ${BUMP3.label}</div>
+                <div class="wp-bump-price">+ ${formatBRL(BUMP3.value)}</div>
+                <div class="wp-bump-desc">${BUMP3.desc}</div>
+              </div>
+            </div>
+          </div>
+          <div class="wp-total" id="wpTotalTaxa2"></div>
+          <button class="wp-btn wp-btn-pink" id="wpPayTaxa2">Ativar liberação de uso ✅</button>
+          <div class="wp-trust">
+            <span><i class="fas fa-lock"></i> Pagamento seguro</span>
+            <span><i class="fas fa-shield-alt"></i> Dados protegidos</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP: Taxa 3 — Confirmação Final -->
+      <div class="wp-step purple-zone" id="stepTaxa3">
+        <div class="wp-timer"><i class="fas fa-clock"></i> Tempo restante: <span id="wpTimer3">04:59</span></div>
+        <div class="wp-header purple-flat">
+          <h2><i class="fas fa-check-double"></i> Agora sim, estamos no último passo!</h2>
+          <p>${TAXA3.label}</p>
+        </div>
+        <div class="wp-taxa-body">
+          <div class="wp-taxa-text">
+            Agora sim, estamos no último passo!
+            <br><br>
+            Essa tarifa é a <strong>confirmação FINAL</strong>. Após o pagamento você recebe <strong>acesso imediato</strong> e <strong>REEMBOLSO TOTAL</strong> de todas as tarifas anteriores.
+          </div>
+          <ul class="wp-taxa-list">
+            <li>Confirmação final da sua assinatura</li>
+            <li>Entrada imediata no canal VIP</li>
+            <li>Reembolso de ${formatBRL(TAXA1.value + TAXA2.value)} — as tarifas já pagas</li>
+          </ul>
+          <div class="wp-taxa-price">${formatBRL(TAXA3.value)}</div>
+          <div class="wp-taxa-warn"><i class="fas fa-exclamation-triangle"></i> Última confirmação. Depois dela o acesso é liberado na hora.</div>
+          <div class="wp-total" id="wpTotalTaxa3"></div>
+          <button class="wp-btn wp-btn-purple" id="wpPayTaxa3"><i class="fas fa-check-double"></i> Confirmar e liberar acesso</button>
+          <div class="wp-trust">
+            <span><i class="fas fa-lock"></i> Pagamento seguro</span>
+            <span><i class="fas fa-shield-alt"></i> Dados protegidos</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP: Retomar pagamento em andamento -->
+      <div class="wp-step" id="stepResume">
+        <div class="wp-header">
+          <h2><i class="fas fa-clock"></i> Pagamento em andamento</h2>
+          <p>Você já começou esse pagamento</p>
+        </div>
+        <div class="wp-body" style="text-align:center">
+          <div id="wpResumeProgress" style="text-align:left;margin-bottom:18px;font-size:14px"></div>
+          <p style="font-size:13px;color:#6b7280;margin-bottom:6px">Próxima etapa:</p>
+          <p id="wpResumeStage" style="font-size:17px;font-weight:700;color:#ff6b3d;margin-bottom:20px"></p>
+          <button class="wp-btn wp-btn-primary" id="wpResumeContinue" style="margin-bottom:10px"><i class="fas fa-arrow-right"></i> Continuar de onde parei</button>
+          <button class="wp-btn wp-btn-copy" id="wpResumeRestart" style="font-size:12px;color:#9ca3af">Cancelar e começar do zero</button>
+        </div>
+      </div>
+
+      <!-- STEP: Sucesso -->
+      <div class="wp-step" id="stepSuccess">
+        <div class="wp-header green">
+          <div class="wp-success-icon"><i class="fas fa-check-circle"></i></div>
+          <h2>Acesso Liberado!</h2>
+          <p>Todas as verificações foram concluídas</p>
+        </div>
+        <div class="wp-body" style="text-align:center">
+          <p style="font-size:14px;color:#374151;margin-bottom:16px">Parabéns! Seu acesso completo está liberado. Clique no botão abaixo para entrar no grupo VIP.</p>
+          <button class="wp-btn wp-btn-success" id="wpRedirect"><i class="fas fa-paper-plane"></i> Entrar no Grupo VIP</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // ── Elementos ─────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const $overlay = $('wpOverlay');
+  const steps = { form: $('stepForm'), qr: $('stepQR'), taxa1: $('stepTaxa1'), taxa2: $('stepTaxa2'), taxa3: $('stepTaxa3'), success: $('stepSuccess'), resume: $('stepResume') };
+  const allSteps = Object.values(steps);
+
+  // ── Timers de urgência ────────────────────────────────────
+  function startUrgencyTimer(spanId) {
+    if (timerInterval) clearInterval(timerInterval);
+    let secs = TIMER_DURATION;
+    const el = $(spanId);
+    if (el) el.textContent = '04:59';
+    timerInterval = setInterval(function() {
+      if (secs > 0) secs--;
+      if (el) el.textContent = pad(Math.floor(secs / 60)) + ':' + pad(secs % 60);
+    }, 1000);
+  }
+
+  function stopUrgencyTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  }
+
+  function showStep(name) {
+    allSteps.forEach(s => s.classList.remove('active'));
+    steps[name].classList.add('active');
+    steps[name].closest('.wp-modal').scrollTop = 0;
+    if (name === 'taxa1') startUrgencyTimer('wpTimer1');
+    else if (name === 'taxa2') startUrgencyTimer('wpTimer2');
+    else if (name === 'taxa3') startUrgencyTimer('wpTimer3');
+    else stopUrgencyTimer();
+  }
+
+  function showError(msg) {
+    const el = $('wpError');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function hideError() { $('wpError').classList.remove('show'); }
+
+  // checkboxId null = etapa sem order bump (Taxa 3): o total e so a base.
+  function updateTotal(elementId, base, checkboxId, bumpValue) {
+    const bv = bumpValue || ORDER_BUMP_VALUE;
+    const cb = checkboxId ? $(checkboxId) : null;
+    const bump = cb && cb.checked ? bv : 0;
+    const total = base + bump;
+    $(elementId).innerHTML = 'Total: <strong>' + formatBRL(total) + '</strong>';
+    return total;
+  }
+
+  // ── Abrir modal ──────────────────────────────────────────
+  function openModal(planKey) {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    stopUrgencyTimer();
+    const plan = PLANS[planKey] || PLANS['30dias'];
+    currentPlan = { ...plan, key: planKey };
+    funnelStage = 'front';
+    userData = { name: '', email: '' };
+
+    $('wpPlanTag').textContent = plan.label + ' — ' + formatBRL(plan.value);
+    $('wpBumpCheckFront').checked = false;
+    $('wpName').value = '';
+    $('wpEmail').value = '';
+    // Esconde o order bump da 1a etapa nos planos marcados com hideFrontBump
+    // (hoje so o Super Combo). O checkbox ja foi zerado acima, entao mesmo
+    // escondido ele nao soma valor nenhum ao PIX.
+    $('wpBumpFront').style.display = plan.hideFrontBump ? 'none' : '';
+    $('wpTotalFront').style.display = plan.hideFrontBump ? 'none' : '';
+    updateTotal('wpTotalFront', plan.value, 'wpBumpCheckFront', BUMP1.value);
+    hideError();
+    showStep('form');
+    $overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+
+    const _icEventId = genEventId();
+    firePixel('InitiateCheckout', { content_name: plan.label, value: plan.value, currency: 'BRL' }, _icEventId);
+    fireTikTokEvent('InitiateCheckout', { content_name: plan.label, value: plan.value, currency: 'BRL' }, _icEventId);
+    fireKwai('initiatedCheckout', { content_id: plan.label, value: plan.value, currency: 'BRL', quantity: 1 });
+  }
+
+  function closeModal() {
+    $overlay.classList.remove('active');
+    document.body.style.overflow = '';
+    stopUrgencyTimer();
+  }
+
+  // ── Gerar PIX (reutilizável) ─────────────────────────────
+  async function createPix(description, value, isLead) {
+    const utms = getUtmParams();
+    const fbCookies = getFbCookies();
+
+    // Antes de qualquer evento desta etapa: liga a Correspondencia Avancada com
+    // o que o cliente preencheu. Fica valendo para o Lead daqui e para todos os
+    // Purchase das etapas seguintes do funil.
+    setFbAdvancedMatching(userData.name, userData.email);
+
+    const payload = {
+      name: userData.name,
+      email: userData.email,
+      plan: description,
+      value: value,
+      utms,
+      fbp: fbCookies.fbp,
+      fbc: fbCookies.fbc,
+      ttclid: getTtclid(),
+      source_url: window.location.href,
+    };
+
+    // Purchase dedup: gera o id AQUI, manda pro servidor (grava no KV) e reusa
+    // o MESMO id quando o navegador disparar o Purchase no polling.
+    currentPurchaseEventId = genEventId();
+    payload.purchase_event_id = currentPurchaseEventId;
+
+    if (isLead) {
+      const leadEventId = genEventId();
+      firePixel('Lead', { content_name: description, value, currency: 'BRL' }, leadEventId);
+      fireTikTokEvent('Lead', { content_name: description, value, currency: 'BRL' }, leadEventId);
+      fireKwai('addPaymentInfo', { content_id: description, value, currency: 'BRL', quantity: 1 });
+      payload.lead_event_id = leadEventId;
+    }
+
+    if (TEST_MODE) {
+      return { paymentId: 'test-' + Date.now(), pixCode: 'TEST-PIX-CODE-' + Date.now() };
+    }
+
+    const res = await fetch('/api/create-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erro ao gerar pagamento.');
+
+    const result = data.data || data;
+    return {
+      paymentId: result.paymentId || result.payment_id || result.id || data.paymentId || data.id || null,
+      pixCode: result.qr_code || result.qrcode || result.pix_code || result.emv || result.brcode || data.qr_code || '',
+    };
+  }
+
+  function showQR(pix, tag, headerClass) {
+    const qrHeader = $('qrHeader');
+    qrHeader.className = 'wp-header' + (headerClass ? ' ' + headerClass : '');
+    $('qrTag').textContent = tag;
+    if (pix.pixCode) {
+      $('wpQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(pix.pixCode);
+      $('wpQrImg').style.display = 'block';
+      $('wpPixCode').textContent = pix.pixCode;
+      $('wpPixCode').style.display = 'block';
+      $('wpCopy').style.display = 'flex';
+    }
+    paymentId = pix.paymentId;
+    showStep('qr');
+  }
+
+  function startPolling(onPaid) {
+    if (pollTimer) clearInterval(pollTimer);
+
+    // Modo teste: simula pagamento após 3 segundos
+    if (TEST_MODE) {
+      pollTimer = setTimeout(function() {
+        pollTimer = null;
+        onPaid();
+      }, 3000);
+      return;
+    }
+
+    pollTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/check-payment?id=' + paymentId);
+        const data = await res.json();
+        const payment = (data.data && data.data.payment) || data.data || data;
+        const status = payment.status || data.status || '';
+        if (['paid','approved','confirmed','PAID','APPROVED','COMPLETED'].includes(status)) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          onPaid();
+        }
+      } catch (e) {}
+    }, POLL_INTERVAL);
+  }
+
+  // ── FLOW: Front-end ──────────────────────────────────────
+  $('wpGenerate').addEventListener('click', async function() {
+    hideError();
+    const name = $('wpName').value.trim();
+    const email = $('wpEmail').value.trim();
+
+    if (!name || name.split(' ').length < 2) { showError('Informe seu nome completo (nome e sobrenome).'); return; }
+    if (!email || !email.includes('@') || !email.includes('.')) { showError('Informe um e-mail válido.'); return; }
+
+    userData = { name, email };
+    const bump = $('wpBumpCheckFront').checked ? BUMP1.value : 0;
+    currentPayValue = currentPlan.value + bump;
+    funnelStage = 'front';
+
+    const btn = $('wpGenerate');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="wp-spinner wp-spinner-white"></span> Gerando PIX...';
+
+    try {
+      const desc = currentPlan.label + (bump > 0 ? ' + ' + BUMP1.label : '');
+      const pix = await createPix(desc, currentPayValue, true);
+      showQR(pix, desc + ' — ' + formatBRL(currentPayValue), '');
+
+      startPolling(function() {
+        const _evId = currentPurchaseEventId || genEventId();
+        firePixel('Purchase', { content_name: desc, value: currentPayValue, currency: 'BRL' }, _evId);
+        fireTikTokEvent('CompletePayment', { content_name: desc, value: currentPayValue, currency: 'BRL' }, _evId);
+        fireKwai('purchase', { content_id: desc, value: currentPayValue, currency: 'BRL', quantity: 1 });
+        // Super Combo: vai direto pro sucesso sem taxas
+        if (currentPlan.combo) {
+          if (typeof clearFunnelState === 'function') clearFunnelState();
+          if (typeof markFunnelCompleted === 'function') markFunnelCompleted();
+          showStep('success');
+          setTimeout(function() { window.location.href = REDIRECT_URL; }, 4000);
+          return;
+        }
+        lastCompletedStep = 'front';
+        funnelStage = 'taxa1';
+        paymentId = null;
+        if (typeof saveFunnelState === 'function') saveFunnelState();
+        $('wpBumpCheckTaxa1').checked = false;
+        updateTotal('wpTotalTaxa1', TAXA1.value, 'wpBumpCheckTaxa1', BUMP2.value);
+        showStep('taxa1');
+      });
+    } catch (err) {
+      showError(err.message || 'Erro de conexão. Tente novamente.');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-qrcode"></i> Gerar PIX';
+  });
+
+  // ── FLOW: Taxa 1 ─────────────────────────────────────────
+  $('wpPayTaxa1').addEventListener('click', async function() {
+    const bump = $('wpBumpCheckTaxa1').checked ? BUMP2.value : 0;
+    currentPayValue = TAXA1.value + bump;
+    funnelStage = 'taxa1';
+
+    const btn = $('wpPayTaxa1');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="wp-spinner wp-spinner-white"></span> Gerando PIX...';
+
+    try {
+      const desc = TAXA1.label + (bump > 0 ? ' + ' + BUMP2.label : '');
+      const pix = await createPix(desc, currentPayValue, false);
+      showQR(pix, desc + ' — ' + formatBRL(currentPayValue), 'wpp-green');
+
+      startPolling(function() {
+        const _evId = currentPurchaseEventId || genEventId();
+        firePixel('Purchase', { content_name: desc, value: currentPayValue, currency: 'BRL' }, _evId);
+        fireTikTokEvent('CompletePayment', { content_name: desc, value: currentPayValue, currency: 'BRL' }, _evId);
+        fireKwai('purchase', { content_id: desc, value: currentPayValue, currency: 'BRL', quantity: 1 });
+        lastCompletedStep = 'taxa1';
+        funnelStage = 'taxa2';
+        paymentId = null;
+        if (typeof saveFunnelState === 'function') saveFunnelState();
+        $('wpBumpCheckTaxa2').checked = false;
+        updateTotal('wpTotalTaxa2', TAXA2.value, 'wpBumpCheckTaxa2', BUMP3.value);
+        showStep('taxa2');
+      });
+    } catch (err) {
+      showError(err.message || 'Erro ao gerar pagamento.');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-lock"></i> Liberar dispositivo por ' + formatBRL(TAXA1.value);
+  });
+
+  // ── FLOW: Taxa 2 ─────────────────────────────────────────
+  $('wpPayTaxa2').addEventListener('click', async function() {
+    const bump = $('wpBumpCheckTaxa2').checked ? BUMP3.value : 0;
+    currentPayValue = TAXA2.value + bump;
+    funnelStage = 'taxa2';
+
+    const btn = $('wpPayTaxa2');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="wp-spinner wp-spinner-white"></span> Gerando PIX...';
+
+    try {
+      const desc = TAXA2.label + (bump > 0 ? ' + ' + BUMP3.label : '');
+      const pix = await createPix(desc, currentPayValue, false);
+      showQR(pix, desc + ' — ' + formatBRL(currentPayValue), 'pink');
+
+      startPolling(function() {
+        const _evId = currentPurchaseEventId || genEventId();
+        firePixel('Purchase', { content_name: desc, value: currentPayValue, currency: 'BRL' }, _evId);
+        fireTikTokEvent('CompletePayment', { content_name: desc, value: currentPayValue, currency: 'BRL' }, _evId);
+        fireKwai('purchase', { content_id: desc, value: currentPayValue, currency: 'BRL', quantity: 1 });
+        lastCompletedStep = 'taxa2';
+        funnelStage = 'taxa3';
+        paymentId = null;
+        if (typeof saveFunnelState === 'function') saveFunnelState();
+        updateTotal('wpTotalTaxa3', TAXA3.value, null, 0);
+        showStep('taxa3');
+      });
+    } catch (err) {
+      showError(err.message || 'Erro ao gerar pagamento.');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Ativar liberação de uso ✅';
+  });
+
+  // ── FLOW: Taxa 3 — Confirmação Final ─────────────────────
+  $('wpPayTaxa3').addEventListener('click', async function() {
+    currentPayValue = TAXA3.value;
+    funnelStage = 'taxa3';
+
+    const btn = $('wpPayTaxa3');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="wp-spinner wp-spinner-white"></span> Gerando PIX...';
+
+    try {
+      const desc = TAXA3.label;
+      const pix = await createPix(desc, currentPayValue, false);
+      showQR(pix, desc + ' — ' + formatBRL(currentPayValue), 'purple');
+
+      startPolling(function() {
+        const _evId = currentPurchaseEventId || genEventId();
+        firePixel('Purchase', { content_name: desc, value: currentPayValue, currency: 'BRL' }, _evId);
+        fireTikTokEvent('CompletePayment', { content_name: desc, value: currentPayValue, currency: 'BRL' }, _evId);
+        fireKwai('purchase', { content_id: desc, value: currentPayValue, currency: 'BRL', quantity: 1 });
+        if (typeof clearFunnelState === 'function') clearFunnelState();
+        if (typeof markFunnelCompleted === 'function') markFunnelCompleted();
+        showStep('success');
+        setTimeout(function() { window.location.href = REDIRECT_URL; }, 4000);
+      });
+    } catch (err) {
+      showError(err.message || 'Erro ao gerar pagamento.');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-check-double"></i> Confirmar e liberar acesso';
+  });
+
+  // ── Order bump toggle: atualiza totais ────────────────────
+  $('wpBumpFront').addEventListener('click', function() {
+    const cb = $('wpBumpCheckFront');
+    cb.checked = !cb.checked;
+    this.classList.toggle('checked', cb.checked);
+    var total = updateTotal('wpTotalFront', currentPlan ? currentPlan.value : PLANS['30dias'].value, 'wpBumpCheckFront', BUMP1.value);
+    $('wpGenerate').innerHTML = '<i class="fas fa-qrcode"></i> Gerar PIX — ' + formatBRL(total);
+  });
+  $('wpBumpTaxa1').addEventListener('click', function() {
+    const cb = $('wpBumpCheckTaxa1');
+    cb.checked = !cb.checked;
+    this.classList.toggle('checked', cb.checked);
+    var total = updateTotal('wpTotalTaxa1', TAXA1.value, 'wpBumpCheckTaxa1', BUMP2.value);
+    $('wpPayTaxa1').innerHTML = '<i class="fas fa-lock"></i> Liberar dispositivo por ' + formatBRL(total);
+  });
+  $('wpBumpTaxa2').addEventListener('click', function() {
+    const cb = $('wpBumpCheckTaxa2');
+    cb.checked = !cb.checked;
+    this.classList.toggle('checked', cb.checked);
+    var total = updateTotal('wpTotalTaxa2', TAXA2.value, 'wpBumpCheckTaxa2', BUMP3.value);
+    $('wpPayTaxa2').textContent = 'Ativar liberação de uso por ' + formatBRL(total) + ' ✅';
+  });
+
+  // ── Copiar código PIX ────────────────────────────────────
+  $('wpCopy').addEventListener('click', function() {
+    const code = $('wpPixCode').textContent;
+    navigator.clipboard.writeText(code).then(function() {
+      $('wpCopy').innerHTML = '<i class="fas fa-check"></i> Copiado!';
+      setTimeout(function() { $('wpCopy').innerHTML = '<i class="fas fa-copy"></i> Copiar código PIX'; }, 2000);
+    }).catch(function() {
+      var ta = document.createElement('textarea');
+      ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      $('wpCopy').innerHTML = '<i class="fas fa-check"></i> Copiado!';
+      setTimeout(function() { $('wpCopy').innerHTML = '<i class="fas fa-copy"></i> Copiar código PIX'; }, 2000);
+    });
+  });
+
+  // ── Fechar modal / Redirect ──────────────────────────────
+  $('wpClose').addEventListener('click', closeModal);
+  $overlay.addEventListener('click', function(e) { if (e.target === $overlay) closeModal(); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+  $('wpName').addEventListener('keydown', function(e) { if (e.key === 'Enter') $('wpEmail').focus(); });
+  $('wpEmail').addEventListener('keydown', function(e) { if (e.key === 'Enter') $('wpGenerate').click(); });
+  $('wpRedirect').addEventListener('click', function() { window.location.href = REDIRECT_URL; });
+
+  // ── Persistência de funil (sessionStorage) ───────────────
+  const FUNNEL_STORAGE_KEY = 'wp_funnel_state_v2';
+  let lastCompletedStep = null; // null | 'front' | 'taxa1' | 'taxa2' (taxa3 = funil concluído, limpa state)
+
+  function saveFunnelState(extra) {
+    try {
+      const state = Object.assign({
+        funnelStage: funnelStage,
+        lastCompletedStep: lastCompletedStep,
+        plan: currentPlan ? currentPlan.key : null,
+        userData: userData,
+        paymentId: paymentId,
+        pixCode: $('wpPixCode') ? $('wpPixCode').textContent : '',
+        qrTag: $('qrTag') ? $('qrTag').textContent : '',
+        qrHeaderClass: $('qrHeader') ? ($('qrHeader').className.replace('wp-header','').trim()) : '',
+        currentPayValue: currentPayValue,
+        ts: Date.now(),
+      }, extra || {});
+      sessionStorage.setItem(FUNNEL_STORAGE_KEY, JSON.stringify(state));
+    } catch(e) {}
+  }
+
+  function loadFunnelState() {
+    try {
+      const raw = sessionStorage.getItem(FUNNEL_STORAGE_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      // Expira após 30 minutos (mesma janela do PIX)
+      if (!s.ts || (Date.now() - s.ts) > 30 * 60 * 1000) {
+        sessionStorage.removeItem(FUNNEL_STORAGE_KEY);
+        return null;
+      }
+      return s;
+    } catch(e) { return null; }
+  }
+
+  function clearFunnelState() {
+    try { sessionStorage.removeItem(FUNNEL_STORAGE_KEY); } catch(e) {}
+  }
+
+  function markFunnelCompleted() {
+    try {
+      localStorage.setItem('wp_funnel_completed_v1', 'true');
+      localStorage.setItem('wp_funnel_completed_at_v1', new Date().toISOString());
+      localStorage.setItem('wp_vip_url_v1', REDIRECT_URL);
+      console.log('[WP] markFunnelCompleted: localStorage set → wp_vip_url_v1=' + REDIRECT_URL);
+    } catch(e) {
+      console.log('[WP] markFunnelCompleted ERRO:', e.message);
+    }
+  }
+
+  function stageLabel(stage) {
+    if (stage === 'front') return 'PIX do plano';
+    if (stage === 'taxa1') return 'Tarifa de Segurança';
+    if (stage === 'taxa2') return 'Taxa de Liberação';
+    if (stage === 'taxa3') return 'Confirmação Final';
+    return stage;
+  }
+
+  function hasResumableState(s) {
+    return !!s && (!!s.paymentId || s.funnelStage === 'taxa1' || s.funnelStage === 'taxa2' || s.funnelStage === 'taxa3');
+  }
+
+  function buildAdvanceOnPaid() {
+    return function() {
+      const _evId = currentPurchaseEventId || genEventId();
+      firePixel('Purchase', { value: currentPayValue, currency: 'BRL' }, _evId);
+      fireTikTokEvent('CompletePayment', { value: currentPayValue, currency: 'BRL' }, _evId);
+      fireKwai('purchase', { value: currentPayValue, currency: 'BRL', quantity: 1 });
+      if (funnelStage === 'front') {
+        if (currentPlan && currentPlan.combo) {
+          clearFunnelState();
+          markFunnelCompleted();
+          showStep('success');
+          setTimeout(function() { window.location.href = REDIRECT_URL; }, 4000);
+          return;
+        }
+        lastCompletedStep = 'front';
+        funnelStage = 'taxa1';
+        paymentId = null;
+        saveFunnelState();
+        $('wpBumpCheckTaxa1').checked = false;
+        updateTotal('wpTotalTaxa1', TAXA1.value, 'wpBumpCheckTaxa1', BUMP2.value);
+        showStep('taxa1');
+      } else if (funnelStage === 'taxa1') {
+        lastCompletedStep = 'taxa1';
+        funnelStage = 'taxa2';
+        paymentId = null;
+        saveFunnelState();
+        $('wpBumpCheckTaxa2').checked = false;
+        updateTotal('wpTotalTaxa2', TAXA2.value, 'wpBumpCheckTaxa2', BUMP3.value);
+        showStep('taxa2');
+      } else if (funnelStage === 'taxa2') {
+        lastCompletedStep = 'taxa2';
+        funnelStage = 'taxa3';
+        paymentId = null;
+        saveFunnelState();
+        updateTotal('wpTotalTaxa3', TAXA3.value, null, 0);
+        showStep('taxa3');
+      } else if (funnelStage === 'taxa3') {
+        clearFunnelState();
+        markFunnelCompleted();
+        showStep('success');
+        setTimeout(function() { window.location.href = REDIRECT_URL; }, 4000);
+      }
+    };
+  }
+
+  function restoreFromState(s) {
+    if (!s) return;
+    const plan = PLANS[s.plan] || PLANS['30dias'];
+    currentPlan = Object.assign({}, plan, { key: s.plan });
+    userData = s.userData || { name: '', email: '' };
+    funnelStage = s.funnelStage || 'front';
+    lastCompletedStep = s.lastCompletedStep || null;
+    paymentId = s.paymentId || null;
+    currentPayValue = s.currentPayValue || plan.value;
+
+    $overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+
+    if (paymentId && s.pixCode) {
+      // Estava aguardando pagamento — restaura QR + polling
+      $('wpPixCode').textContent = s.pixCode;
+      $('wpQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(s.pixCode);
+      $('qrTag').textContent = s.qrTag || '';
+      $('qrHeader').className = 'wp-header' + (s.qrHeaderClass ? ' ' + s.qrHeaderClass : '');
+      showStep('qr');
+      startPolling(buildAdvanceOnPaid());
+    } else if (funnelStage === 'taxa1') {
+      $('wpBumpCheckTaxa1').checked = false;
+      updateTotal('wpTotalTaxa1', TAXA1.value, 'wpBumpCheckTaxa1', BUMP2.value);
+      showStep('taxa1');
+    } else if (funnelStage === 'taxa2') {
+      $('wpBumpCheckTaxa2').checked = false;
+      updateTotal('wpTotalTaxa2', TAXA2.value, 'wpBumpCheckTaxa2', BUMP3.value);
+      showStep('taxa2');
+    } else if (funnelStage === 'taxa3') {
+      updateTotal('wpTotalTaxa3', TAXA3.value, null, 0);
+      showStep('taxa3');
+    } else {
+      // Nada útil pra retomar — fecha
+      closeModal();
+    }
+  }
+
+  function offerResume(s) {
+    const stageTxt = stageLabel(s.funnelStage);
+    const valueTxt = s.paymentId && s.currentPayValue ? ' — ' + formatBRL(s.currentPayValue) : '';
+    $('wpResumeStage').textContent = stageTxt + valueTxt;
+
+    // Barra de progresso: marca etapas já pagas
+    const lcs = s.lastCompletedStep || null;
+    const frontDone = lcs === 'front' || lcs === 'taxa1' || lcs === 'taxa2';
+    const taxa1Done = lcs === 'taxa1' || lcs === 'taxa2';
+    const taxa2Done = lcs === 'taxa2';
+    function row(done, label) {
+      const icon = done ? '<i class="fas fa-check-circle" style="color:#10b981"></i>' : '<i class="far fa-circle" style="color:#d1d5db"></i>';
+      const color = done ? '#10b981' : '#9ca3af';
+      const deco = done ? '' : '';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;color:' + color + ';font-weight:' + (done?'600':'500') + '">' + icon + '<span>' + label + (done ? ' (pago)' : '') + '</span></div>';
+    }
+    $('wpResumeProgress').innerHTML =
+      row(frontDone, 'Plano') +
+      row(taxa1Done, 'Tarifa de Segurança') +
+      row(taxa2Done, 'Taxa de Liberação') +
+      row(false, 'Confirmação Final');
+
+    showStep('resume');
+    $overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  $('wpResumeContinue').addEventListener('click', function() {
+    const s = loadFunnelState();
+    if (s) restoreFromState(s);
+    else { closeModal(); }
+  });
+
+  $('wpResumeRestart').addEventListener('click', function() {
+    clearFunnelState();
+    closeModal();
+  });
+
+  // Intercepta showQR pra salvar state após gerar PIX
+  const _origShowQR = showQR;
+  showQR = function(pix, tag, headerClass) {
+    _origShowQR(pix, tag, headerClass);
+    saveFunnelState();
+  };
+
+  // Intercepta openModal: se já existe state ativo, oferece retomar
+  const _origOpenModal = openModal;
+  openModal = function(planKey) {
+    const s = loadFunnelState();
+    if (hasResumableState(s)) {
+      offerResume(s);
+      return;
+    }
+    _origOpenModal(planKey);
+  };
+
+  // Autostart ao carregar: se houver state ativo, oferece retomar
+  (function autostart() {
+    const s = loadFunnelState();
+    if (hasResumableState(s)) offerResume(s);
+  })();
+
+  // ── Expor função global ──────────────────────────────────
+  window.openWiinPayCheckout = openModal;
+
+})();
